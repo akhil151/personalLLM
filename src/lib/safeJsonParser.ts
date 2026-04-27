@@ -53,33 +53,44 @@ export const safeJsonParser = {
       
       // If it still fails, try to shrink from the outside (for cases like {{...}})
       let attempts = 0;
-      while (attempts < 5) {
+      let success = false;
+      
+      while (attempts < 10) {
         try {
           JSON.parse(possibleJson);
           sanitized = possibleJson;
           recovered = true;
+          success = true;
           break;
         } catch (e) {
           // If parse fails, check if we have redundant outer braces
           if (possibleJson.startsWith('{{') && possibleJson.endsWith('}}')) {
-            possibleJson = possibleJson.substring(1, possibleJson.length - 1);
+            possibleJson = possibleJson.substring(1, possibleJson.length - 1).trim();
             recovered = true;
             attempts++;
             continue;
           }
           
-          // Or maybe there's junk outside the first/last matching pair
-          // This is a bit risky but we can try to find the next { or previous }
-          const nextFirst = possibleJson.indexOf('{', 1);
-          const prevLast = possibleJson.lastIndexOf('}', possibleJson.length - 2);
-          
-          if (nextFirst !== -1 && prevLast !== -1 && prevLast > nextFirst) {
-             possibleJson = possibleJson.substring(nextFirst, prevLast + 1);
+          // NEW RECOVERY: Try to find the next '}' from the right
+           // This handles cases where there is junk after the JSON block
+           const nextLastBrace = possibleJson.lastIndexOf('}', possibleJson.length - 2);
+           const nextFirstBrace = possibleJson.indexOf('{', 1);
+
+           if (nextLastBrace !== -1 && (nextLastBrace > nextFirstBrace || nextFirstBrace === -1)) {
+             possibleJson = possibleJson.substring(0, nextLastBrace + 1).trim();
              recovered = true;
              attempts++;
-          } else {
-            break;
-          }
+             continue;
+           }
+
+           if (nextFirstBrace !== -1) {
+             possibleJson = possibleJson.substring(nextFirstBrace).trim();
+             recovered = true;
+             attempts++;
+             continue;
+           }
+
+          break;
         }
       }
     }

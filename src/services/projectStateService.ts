@@ -74,6 +74,15 @@ export const projectStateService = {
 
   async getActiveProject() {
     const projects = await this.getProjects();
-    return projects.find((p: any) => p.status === 'active') || projects[0] || null;
+    if (projects.length === 0) return null;
+    
+    // Priority: 1. active, 2. planning, 3. most recent
+    const active = projects.find((p: any) => p.status === 'active');
+    if (active) return active;
+    
+    const planning = projects.find((p: any) => p.status === 'planning');
+    if (planning) return planning;
+    
+    return projects[0];
   }
 };

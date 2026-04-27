@@ -40,15 +40,19 @@ export const dbService = {
   /**
    * Creates a new conversation.
    */
-  async createConversation(title: string) {
+  async createConversation(title: string, userId?: string) {
     const supabase = await this._getSupabase();
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    if (!user) throw new Error('Unauthorized');
+    let finalUserId = userId;
+
+    if (!finalUserId) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Unauthorized');
+      finalUserId = user.id;
+    }
 
     const { data, error } = await supabase
       .from('conversations')
-      .insert([{ title, user_id: user.id }])
+      .insert([{ title, user_id: finalUserId }])
       .select()
       .single();
 
@@ -75,10 +79,15 @@ export const dbService = {
    * Saves a message (User or Assistant) to the database.
    * Now triggers an asynchronous embedding job.
    */
-  async saveMessage(conversationId: string, role: 'user' | 'assistant', content: string) {
+  async saveMessage(conversationId: string, role: 'user' | 'assistant', content: string, userId?: string) {
     const supabase = await this._getSupabase();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('Unauthorized');
+    let finalUserId = userId;
+
+    if (!finalUserId) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Unauthorized');
+      finalUserId = user.id;
+    }
 
     const { data, error } = await supabase
       .from('messages')
@@ -93,13 +102,37 @@ export const dbService = {
     if (error) throw error;
 
     // ASYNC: Enqueue embedding job
-    await jobQueue.enqueue(user.id, 'embedding_generation', {
+    await jobQueue.enqueue(finalUserId, 'embedding_generation', {
       messageId: data.id,
       conversationId,
-      userId: user.id,
+      userId: finalUserId,
       content
     });
 
     return data;
+  },
+
+  /**
+   * PHASE Z.4.1.2: CANONICAL FLOW
+   * Unifies all entry points into a single persistence chain.
+   * User Input -> conversation -> message -> embedding job -> agent_run -> tasks
+   */
+  async initiateAutonomousRun(userId: string, input: string, conversationId?: string) {
+    const { executionPipeline } = await import('@/orchestrator/executionPipeline');
+    
+    // 1. Ensure Conversation
+    let activeConversationId = conversationId;
+    if (!activeConversationId) {
+      const conv = await this.createConversation(input.slice(0, 50), userId);
+      activeConversationId = conv.id;
+    }
+
+    // 2. Create User Message (Triggers embedding job via saveMessage)
+    await this.saveMessage(activeConversationId, 'user', input, userId);
+
+    // 3. Trigger Execution Pipeline (Creates agent_run and tasks)
+    const result = await executionPipeline.run(userId, activeConversationId, input);
+    
+    return result;
   }
 };

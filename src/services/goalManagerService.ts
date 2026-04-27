@@ -74,6 +74,15 @@ export const goalManagerService = {
 
   async getActiveGoal() {
     const goals = await this.getGoals();
-    return goals.find((g: any) => g.status === 'active') || goals[0] || null;
+    if (goals.length === 0) return null;
+
+    // Priority: 1. active, 2. pending, 3. most recent
+    const active = goals.find((g: any) => g.status === 'active');
+    if (active) return active;
+
+    const pending = goals.find((g: any) => g.status === 'pending');
+    if (pending) return pending;
+
+    return goals[0];
   }
 };

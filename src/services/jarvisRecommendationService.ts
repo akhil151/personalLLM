@@ -2,6 +2,7 @@ import { goalManagerService } from './goalManagerService';
 import { projectStateService } from './projectStateService';
 import { jarvisReflectionService } from './jarvisReflectionService';
 import { llmService } from './llmService';
+import { createAdminClient } from '@/lib/supabase-admin';
 import { z } from 'zod';
 
 const JarvisRecommendationSchema = z.object({
@@ -19,22 +20,39 @@ export const jarvisRecommendationService = {
   /**
    * Generates proactive recommendations based on current system state.
    */
-  async getRecommendations() {
+  async getRecommendations(userId?: string) {
     try {
+      const supabase = createAdminClient();
+
       // 1. Gather Context
-      const [goals, project, reflections] = await Promise.all([
-        goalManagerService.getGoals(),
-        projectStateService.getActiveProject(),
-        jarvisReflectionService.getLatestReflections(3)
-      ]);
+      // Use direct DB queries if no user session is available
+      let goals, project, reflections;
 
-      const context = {
-        active_project: project,
-        goals: goals.filter((g: any) => g.status !== 'completed'),
-        recent_reflections: reflections
-      };
-
-      const systemPrompt = `You are Jarvis, a proactive project manager AI.
+      if (userId) {
+        const goalsResult = await supabase.from('jarvis_goals').select('*').eq('user_id', userId).neq('status', 'completed');
+        const projectResult = await supabase.from('jarvis_projects').select('*').eq('user_id', userId).eq('status', 'active').single();
+        const reflectionsResult = await supabase.from('jarvis_reflections').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(3);
+        
+        goals = goalsResult.data || [];
+        project = projectResult.data;
+        reflections = reflectionsResult.data || [];
+      } else {
+        // Fallback to existing logic if no userId provided (though it might fail in background)
+        [goals, project, reflections] = await Promise.all([
+          goalManagerService.getGoals(),
+          projectStateService.getActiveProject(),
+          jarvisReflectionService.getLatestReflections(3)
+        ]);
+        goals = goals.filter((g: any) => g.status !== 'completed');
+       }
+ 
+       const context = {
+         active_project: project,
+         goals,
+         recent_reflections: reflections
+       };
+ 
+       const systemPrompt = `You are Jarvis, a proactive project manager AI.
       Based on the current project state, goals, and recent reflections, suggest the best next actions.
       
       Structure your response as JSON:

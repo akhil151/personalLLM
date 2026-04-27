@@ -23,7 +23,39 @@ export class MemoryAgent implements IAgent {
     await orchestratorService.logStep(runId, this.name, 'thought', `Retrieving relevant context for task: ${task.title}`);
 
     try {
-      // 1. Semantic Search in past messages
+      // 1. Determine if this is a storage or retrieval task
+      const isStorage = task.title.toLowerCase().includes('store') || 
+                        task.title.toLowerCase().includes('save') || 
+                        task.description.toLowerCase().includes('store') || 
+                        task.description.toLowerCase().includes('save');
+
+      if (isStorage) {
+        await orchestratorService.logStep(runId, this.name, 'thought', `Storing task result as a semantic memory.`);
+        
+        // Use the goal and task result as the content to store
+        const contentToStore = `Goal: ${goal}\nFindings: ${JSON.stringify(data.fullContext || data.context || task.description)}`;
+        
+        // Create a message entry to link the embedding to
+        const supabase = createAdminClient();
+        const { data: msg } = await supabase.from('messages').insert([{
+          conversation_id: input.conversationId,
+          user_id: userId,
+          role: 'assistant',
+          content: contentToStore
+        }]).select().single();
+
+        if (msg) {
+          await memoryService.storeMessageEmbedding(msg.id, input.conversationId, userId, contentToStore);
+          await orchestratorService.logStep(runId, this.name, 'observation', `Successfully stored memory.`);
+        }
+
+        return {
+          success: true,
+          data: { stored: true, messageId: msg?.id }
+        };
+      }
+
+      // 2. Semantic Search in past messages (Default)
       const relevantMemories = await memoryService.searchSimilarMemories(task.title || goal, userId);
       
       const contextString = relevantMemories

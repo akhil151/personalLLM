@@ -36,23 +36,15 @@ export const jobQueue = {
 
   /**
    * Fetches the next available job to process using atomic claiming.
-   * This prevents multiple workers from picking up the same job.
    */
   async getNextJob(workerId: string = 'default-worker') {
     const supabase = createAdminClient();
     const now = new Date().toISOString();
-    const leaseTime = new Date(Date.now() + 1000 * 60 * 5).toISOString(); // 5 min lease
-
-    // 1. Find a candidate job
-    // We use a small buffer (5s) to account for clock skew
-    const bufferNow = new Date(Date.now() + 5000).toISOString();
 
     const { data: candidate, error: findError } = await supabase
       .from('background_jobs')
       .select('id')
       .in('status', ['queued', 'retrying'])
-      .lt('next_run_at', bufferNow)
-      .or(`lease_expires_at.lt.${now},lease_owner.is.null`)
       .order('created_at', { ascending: true })
       .limit(1)
       .single();
@@ -64,13 +56,10 @@ export const jobQueue = {
       .from('background_jobs')
       .update({ 
         status: 'processing',
-        lease_owner: workerId,
-        lease_expires_at: leaseTime,
         updated_at: now
       })
       .eq('id', candidate.id)
-      .or('status.eq.queued,status.eq.retrying') // Verify still available
-      .or(`lease_expires_at.lt.${now},lease_owner.is.null`) // Verify still unleased
+      .in('status', ['queued', 'retrying']) // Verify still available
       .select()
       .single();
 

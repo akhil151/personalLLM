@@ -130,14 +130,12 @@ export const workflowRuntime = {
 
     const sm = new WorkflowStateMachine(context);
     
-    // Only transition if not already in a terminal/recovered state
+    // Only transition if not already in a terminal state
     if (run.status !== 'completed' && run.status !== 'failed') {
-      sm.transitionTo('recovered');
-      // Update status to 'recovered' but DO NOT clear lease yet if this is part of a recovery claim
-      // Actually, scanAndRecover handles the lease. 
-      // We update the run status so other parts of the system know it's being handled.
+      sm.transitionTo('running');
+      // Update status to 'running'
       await supabase.from('agent_runs').update({ 
-        status: 'recovered',
+        status: 'running',
         updated_at: new Date().toISOString()
       }).eq('id', runId);
     }

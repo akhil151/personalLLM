@@ -130,7 +130,12 @@ export const workerRuntime = {
       runId,
       conversationId: context.conversationId,
       userId: context.userId,
-      data: { task, context: contextData, goal: context.variables.goal }
+      data: { 
+        task, 
+        context: contextData, 
+        goal: context.variables.goal,
+        fullContext: context.variables
+      }
     });
 
     if (!executionResult.success) throw new Error(executionResult.error || 'Execution failed');

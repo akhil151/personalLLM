@@ -25,11 +25,8 @@ export async function POST(req: Request) {
     const lastMessagePart = history[history.length - 1].parts.find(p => p.type === 'text');
     const lastMessage = lastMessagePart?.type === 'text' ? lastMessagePart.text : '';
 
-    // 1. SAVE USER MESSAGE
-    await dbService.saveMessage(conversationId, 'user', lastMessage);
-
-    // 2. TRIGGER DURABLE WORKFLOW PIPELINE
-    const result = await executionPipeline.run(user.id, conversationId, lastMessage);
+    // 1 & 2. UNIFIED PERSISTENCE CHAIN (Conversation -> Message -> Agent Run)
+    const result = await dbService.initiateAutonomousRun(user.id, lastMessage, conversationId);
 
     if (!result.success) {
       return new Response(JSON.stringify({ error: result.error }), { status: 500 });

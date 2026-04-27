@@ -143,5 +143,25 @@ export const orchestratorService = {
       .eq('id', runId);
 
     if (error) console.error('Error updating run status:', error);
+  },
+
+  /**
+   * Logs a voice session entry.
+   */
+  async logVoiceSession(userId: string, conversationId: string, status: 'active' | 'completed' | 'interrupted', config: any = {}) {
+    const supabase = createAdminClient();
+    const { data, error } = await supabase
+      .from('voice_sessions')
+      .insert([{
+        user_id: userId,
+        conversation_id: conversationId,
+        status,
+        session_config: config
+      }])
+      .select()
+      .single();
+
+    if (error) console.error('Error logging voice session:', error);
+    return data;
   }
 };

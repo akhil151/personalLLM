@@ -1,4 +1,4 @@
-export type WorkflowState = 'pending' | 'running' | 'completed' | 'failed' | 'paused' | 'recovered';
+export type WorkflowState = 'pending' | 'running' | 'completed' | 'failed' | 'paused';
 
 export interface WorkflowContext {
   runId: string;
@@ -34,12 +34,11 @@ export class WorkflowStateMachine {
 
   transitionTo(newState: WorkflowState) {
     const validTransitions: Record<WorkflowState, WorkflowState[]> = {
-      'pending': ['running', 'failed', 'recovered'],
-      'running': ['completed', 'failed', 'paused', 'recovered'],
-      'paused': ['running', 'failed', 'recovered'],
-      'recovered': ['running', 'failed'],
+      'pending': ['running', 'failed'],
+      'running': ['completed', 'failed', 'paused'],
+      'paused': ['running', 'failed'],
       'completed': [],
-      'failed': ['recovered']
+      'failed': ['running']
     };
 
     if (!validTransitions[this.currentState].includes(newState)) {

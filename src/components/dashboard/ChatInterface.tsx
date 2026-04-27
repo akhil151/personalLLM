@@ -3,6 +3,8 @@
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
 import { useState, useEffect } from 'react';
+import { VoicePushToTalk } from '@/components/voice/VoicePushToTalk';
+import { useVoice } from '@/hooks/useVoice';
 
 interface ChatInterfaceProps {
   conversationId: string;
@@ -13,6 +15,9 @@ export function ChatInterface({ conversationId, initialMessages }: ChatInterface
   const [input, setInput] = useState('');
   const [showTrace, setShowTrace] = useState(false);
   const [steps, setSteps] = useState<any[]>([]);
+  const [isVoiceActive, setIsVoiceActive] = useState(false);
+
+  const { isListening, isSpeaking, startListening, stopListening, speak, stopSpeaking } = useVoice();
   
   // useChat in AI SDK 6 uses transport and sendMessage
   const { messages, sendMessage, status } = useChat({
@@ -25,7 +30,39 @@ export function ChatInterface({ conversationId, initialMessages }: ChatInterface
       role: m.role,
       parts: [{ type: 'text', text: m.content }],
     })),
+    onFinish: (message) => {
+      // If voice was active, read the response aloud
+      if (isVoiceActive) {
+        // AI SDK 6 onFinish message structure check
+        const parts = message.message?.parts || message.parts || [];
+        const text = parts.filter((p: any) => p.type === 'text').map((p: any) => p.text).join(' ');
+        if (text) {
+          speak(text, () => {
+            setIsVoiceActive(false);
+          });
+        }
+      }
+    }
   });
+
+  // Handle voice result
+  const handleVoiceResult = (text: string) => {
+    setIsVoiceActive(true);
+    sendMessage({ text });
+    setSteps([]);
+    
+    // Log voice session (fire and forget for UI)
+    fetch('/api/voice/log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ conversationId, status: 'completed' }),
+    }).catch(console.error);
+  };
+
+  const handleVoiceStart = () => {
+    stopSpeaking();
+    startListening(handleVoiceResult);
+  };
 
   // Fetch execution steps periodically if a run is active
   useEffect(() => {
@@ -143,7 +180,14 @@ export function ChatInterface({ conversationId, initialMessages }: ChatInterface
 
       {/* INPUT AREA */}
       <form onSubmit={handleSubmit} className="p-4 border-t border-zinc-200 dark:border-zinc-800">
-        <div className="flex space-x-4">
+        <div className="flex space-x-4 items-center">
+          <VoicePushToTalk 
+            isListening={isListening}
+            isSpeaking={isSpeaking}
+            onStart={handleVoiceStart}
+            onStop={stopListening}
+            disabled={isLoading}
+          />
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
