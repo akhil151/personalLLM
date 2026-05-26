@@ -9,8 +9,8 @@ import '@/agents'; // Register agents
 import { OpenAIStream, StreamingTextResponse } from 'ai';
 
 /**
- * PHASE 4 AI CHAT ROUTE
- * Now evolves from simple RAG to Multi-Agent Orchestration.
+ * PHASE 5 AI CHAT ROUTE
+ * Now evolves from simple Orchestration to Durable & Event-Driven Workflows.
  */
 export async function POST(req: Request) {
   const startTime = Date.now();
@@ -24,9 +24,9 @@ export async function POST(req: Request) {
     // 1. SAVE USER MESSAGE
     await dbService.saveMessage(conversationId, 'user', message);
 
-    // 2. TRIGGER AGENTIC PIPELINE
-    // This is the "Cognitive Architecture" entry point.
-    // Instead of just calling GPT-4, we dispatch to our orchestrator.
+    // 2. TRIGGER DURABLE WORKFLOW PIPELINE
+    // This is the "Durable Execution" entry point.
+    // The run is now checkpointed and can survive server restarts.
     const result = await executionPipeline.run(user.id, conversationId, message);
 
     if (!result.success) {
