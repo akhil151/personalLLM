@@ -2,30 +2,55 @@ import { supabase } from '@/lib/supabase';
 
 /**
  * messageService handles all database interactions related to messages.
- * By abstracting this logic into a service, we:
- * 1. Keep our components clean and focused on UI.
- * 2. Make our code more testable.
- * 3. Centralize data fetching logic.
+ * 
+ * SECURITY NOTE:
+ * Even though we pass the user_id here, Supabase Row Level Security (RLS)
+ * will validate that the authenticated user's ID matches the user_id being 
+ * inserted. If they don't match, the database will reject the request.
  */
 export const messageService = {
+  /**
+   * Fetches all messages for the currently authenticated user.
+   */
+  async getUserMessages() {
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data;
+  },
+
   /**
    * Saves a new message to the Supabase database.
    * @param content The text content of the message.
    */
   async saveMessage(content: string) {
-    // We use the Supabase SDK to perform an 'insert' operation.
-    // Behind the scenes:
-    // 1. The SDK constructs a POST request to the Supabase PostgREST API.
-    // 2. It includes the Anon Key in the headers.
-    // 3. PostgreSQL executes the insert and returns the result.
+    // 1. Get the current user session
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      throw new Error('You must be logged in to save messages.');
+    }
+
+    // 2. Perform the insert
+    // We explicitly include user_id to be transparent, though the DB default would also work.
+    // RLS policy "Users can insert own messages" will verify: auth.uid() === user_id
     const { data, error } = await supabase
       .from('messages')
-      .insert([{ content }])
-      .select();
+      .insert([
+        { 
+          content, 
+          user_id: user.id 
+        }
+      ])
+      .select()
+      .single();
 
     if (error) {
-      // We throw the error so the UI can catch it and display a message.
-      throw new Error(error.message);
+      console.error('RLS or Database Error:', error.message);
+      throw error;
     }
 
     return data;

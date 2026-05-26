@@ -1,22 +1,20 @@
-import { createClient } from '@supabase/supabase-js';
-
-// These environment variables are required to connect to your Supabase project.
-// We use '!' to tell TypeScript that we are sure these variables exist.
-// In a real production app, you'd want to validate these at runtime.
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+import { createBrowserClient } from '@supabase/ssr';
 
 /**
- * createClient() initializes a new Supabase client.
- * This client is the entry point to all Supabase functionality:
- * - Auth (authentication and session management)
- * - Database (PostgreSQL interactions)
- * - Storage (file uploads)
- * - Realtime (subscriptions)
+ * createClient() initializes a new Supabase client for the browser.
+ * In Next.js App Router, we need different clients for client-side and server-side
+ * to correctly handle cookies and session persistence.
  * 
  * Internal Workflow:
- * 1. It takes the project URL and the Anonymous Key.
- * 2. It sets up an internal fetch-based transport for API requests.
- * 3. It automatically handles authentication headers if a user is logged in.
+ * 1. createBrowserClient uses the browser's cookies to manage the session.
+ * 2. It automatically handles refreshing the JWT when it expires.
+ * 3. It's safe to use in Client Components ('use client').
  */
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const createClient = () =>
+  createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+
+// For simple client-side usage, we can export a singleton instance
+export const supabase = createClient();
