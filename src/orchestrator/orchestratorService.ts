@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase-server';
+import { createAdminClient } from '@/lib/supabase-admin';
 import { agentRegistry, AgentRole } from './agentRegistry';
 import { observabilityService } from '@/services/observability/observabilityService';
 
@@ -16,7 +16,7 @@ export const orchestratorService = {
    * Starts a new autonomous agent run.
    */
   async startRun(userId: string, conversationId: string, goal: string) {
-    const supabase = await createClient();
+    const supabase = createAdminClient();
 
     // 1. Initialize the Run in DB
     const { data: run, error } = await supabase
@@ -49,7 +49,7 @@ export const orchestratorService = {
     toolCall?: any,
     toolOutput?: any
   ) {
-    const supabase = await createClient();
+    const supabase = createAdminClient();
     const { error } = await supabase
       .from('execution_steps')
       .insert([{
@@ -81,7 +81,7 @@ export const orchestratorService = {
    * Updates the overall run status.
    */
   async updateRunStatus(runId: string, status: 'completed' | 'failed' | 'paused', metadata?: any) {
-    const supabase = await createClient();
+    const supabase = createAdminClient();
     const { error } = await supabase
       .from('agent_runs')
       .update({ 

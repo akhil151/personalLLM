@@ -1,7 +1,7 @@
 import { IAgent, AgentInput, AgentOutput, agentRegistry } from '@/orchestrator/agentRegistry';
 import { openaiService } from '@/services/openaiService';
 import { orchestratorService } from '@/orchestrator/orchestratorService';
-import { createClient } from '@/lib/supabase-server';
+import { createAdminClient } from '@/lib/supabase-admin';
 
 /**
  * PlannerAgent is responsible for task decomposition.
@@ -24,12 +24,15 @@ export class PlannerAgent implements IAgent {
     await orchestratorService.logStep(runId, this.name, 'thought', `Decomposing goal: "${goal}" into tasks.`);
 
     const systemPrompt = `You are a Senior AI Planner. Your job is to take a high-level user goal and break it down into a sequence of logical tasks.
-    Each task should be clear, actionable, and assigned to either an 'executor' (for tools/actions) or 'memory' (for retrieval/context).
+    Each task should be clear, actionable, and assigned to the most appropriate agent:
+    - 'executor': for general tool usage (database, system tasks).
+    - 'memory': for searching past conversations or retrieving context.
+    - 'browser': for any task that requires web navigation, searching the internet, or interacting with websites.
     
     Return a JSON object with the following structure:
     {
       "tasks": [
-        { "title": "...", "description": "...", "priority": 1, "assigned_agent": "executor|memory" }
+        { "title": "...", "description": "...", "priority": 1, "assigned_agent": "executor|memory|browser" }
       ]
     }`;
 
@@ -40,7 +43,7 @@ export class PlannerAgent implements IAgent {
       ], {});
 
       // Save tasks to DB
-      const supabase = await createClient();
+      const supabase = createAdminClient();
       const tasksToInsert = result.tasks.map((t: any) => ({
         run_id: runId,
         title: t.title,

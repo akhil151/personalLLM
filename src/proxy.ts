@@ -6,7 +6,7 @@ import { updateSession } from '@/lib/supabase-middleware';
  * This runs before every request to the application.
  * We use it to protect routes and manage user sessions centrally.
  */
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   return await updateSession(request);
 }
 

@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase-server';
+import { createAdminClient } from '@/lib/supabase-admin';
 
 /**
  * BrowserSessionManager handles the lifecycle of browser execution sessions.
@@ -11,7 +11,7 @@ import { createClient } from '@/lib/supabase-server';
  */
 export const browserSessionManager = {
   async createSession(userId: string, runId?: string) {
-    const supabase = await createClient();
+    const supabase = createAdminClient();
 
     const { data, error } = await supabase
       .from('browser_sessions')
@@ -29,7 +29,7 @@ export const browserSessionManager = {
   },
 
   async closeSession(sessionId: string) {
-    const supabase = await createClient();
+    const supabase = createAdminClient();
     await supabase
       .from('browser_sessions')
       .update({ status: 'closed', updated_at: new Date().toISOString() })
@@ -39,7 +39,7 @@ export const browserSessionManager = {
   },
 
   async getActiveSession(userId: string, runId: string) {
-    const supabase = await createClient();
+    const supabase = createAdminClient();
     const { data } = await supabase
       .from('browser_sessions')
       .select('*')

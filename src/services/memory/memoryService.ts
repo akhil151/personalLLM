@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase-server';
+import { createAdminClient } from '@/lib/supabase-admin';
 import { embeddingService } from './embeddingService';
 
 /**
@@ -19,7 +19,7 @@ export const memoryService = {
     userId: string, 
     content: string
   ) {
-    const supabase = await createClient();
+    const supabase = createAdminClient();
     const embedding = await embeddingService.generateEmbedding(content);
 
     const { error } = await supabase
@@ -43,7 +43,7 @@ export const memoryService = {
    * A smaller angle means higher similarity.
    */
   async searchSimilarMemories(query: string, userId: string, limit = 5) {
-    const supabase = await createClient();
+    const supabase = createAdminClient();
     const queryEmbedding = await embeddingService.generateEmbedding(query);
 
     // We call the PostgreSQL function 'match_messages' we created in schema.sql

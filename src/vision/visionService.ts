@@ -34,12 +34,11 @@ export const visionService = {
     }`;
 
     try {
-      // In a real system, we'd send the image to gpt-4o via openaiService.
-      // Since I'm simulating, I'll return a structured mock response.
-      const perception = await openaiService.getStructuredOutput([
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: `Analyze the current browser state for goal: ${goal}` }
-      ], {});
+      const perception = await openaiService.analyzeImage(
+        imageUrl,
+        systemPrompt,
+        `Analyze the current browser state for goal: ${goal}`
+      );
 
       return perception;
 

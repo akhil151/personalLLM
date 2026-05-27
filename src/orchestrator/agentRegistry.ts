@@ -1,4 +1,4 @@
-export type AgentRole = 'planner' | 'memory' | 'executor';
+export type AgentRole = 'planner' | 'memory' | 'executor' | 'browser';
 
 export interface AgentInput {
   runId: string;

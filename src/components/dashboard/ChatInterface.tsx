@@ -1,6 +1,7 @@
 'use client';
 
-import { useChat } from 'ai/react';
+import { useChat } from '@ai-sdk/react';
+import { DefaultChatTransport } from 'ai';
 import { useState, useEffect } from 'react';
 
 interface ChatInterfaceProps {
@@ -9,71 +10,156 @@ interface ChatInterfaceProps {
 }
 
 export function ChatInterface({ conversationId, initialMessages }: ChatInterfaceProps) {
-  // useChat is a powerful hook from the 'ai' library.
-  // It handles the streaming state, input state, and submission logic automatically.
-  const { messages, input, handleInputChange, handleSubmit, isLoading } = useChat({
-    api: '/api/chat',
-    body: { conversationId },
-    initialMessages: initialMessages.map(m => ({
+  const [input, setInput] = useState('');
+  const [showTrace, setShowTrace] = useState(false);
+  const [steps, setSteps] = useState<any[]>([]);
+  
+  // useChat in AI SDK 6 uses transport and sendMessage
+  const { messages, sendMessage, status } = useChat({
+    transport: new DefaultChatTransport({
+      api: '/api/chat',
+      body: { conversationId },
+    }),
+    messages: initialMessages.map((m: any) => ({
       id: m.id,
       role: m.role,
-      content: m.content,
+      parts: [{ type: 'text', text: m.content }],
     })),
   });
 
+  // Fetch execution steps periodically if a run is active
+  useEffect(() => {
+    let interval: any;
+    if (status === 'submitted' || status === 'streaming') {
+      interval = setInterval(async () => {
+        try {
+          const res = await fetch(`/api/chat/steps?conversationId=${conversationId}`);
+          const data = await res.json();
+          if (data.steps) setSteps(data.steps);
+        } catch (err) {
+          console.error('Failed to fetch steps:', err);
+        }
+      }, 2000);
+    }
+    return () => clearInterval(interval);
+  }, [status, conversationId]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (input.trim() && status === 'ready') {
+      sendMessage({ text: input });
+      setInput('');
+      setSteps([]); // Clear old steps
+    }
+  };
+
+  const isLoading = status === 'submitted' || status === 'streaming';
+
   return (
     <div className="flex flex-col h-[calc(100vh-200px)] bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
-      {/* MESSAGE AREA */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-6">
-        {messages.length === 0 && (
-          <div className="h-full flex flex-col items-center justify-center text-zinc-400 space-y-2">
-            <p className="text-lg font-medium">No messages yet</p>
-            <p className="text-sm">Start a conversation below!</p>
-          </div>
-        )}
-        
-        {messages.map((m) => (
-          <div 
-            key={m.id} 
-            className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
-          >
-            <div className={`max-w-[80%] p-4 rounded-2xl ${
-              m.role === 'user' 
-                ? 'bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900' 
-                : 'bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200'
-            }`}>
-              <p className="text-sm leading-relaxed whitespace-pre-wrap">{m.content}</p>
+      {/* HEADER */}
+      <div className="px-6 py-3 border-b border-zinc-100 dark:border-zinc-800 flex justify-between items-center bg-zinc-50/50 dark:bg-zinc-900/50">
+        <div className="flex items-center space-x-2">
+          <div className={`w-2 h-2 rounded-full ${status === 'ready' ? 'bg-green-500' : 'bg-amber-500 animate-pulse'}`} />
+          <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+            {status === 'ready' ? 'Ready' : 'Agent Executing...'}
+          </span>
+        </div>
+        <button 
+          onClick={() => setShowTrace(!showTrace)}
+          className="text-xs font-medium text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+        >
+          {showTrace ? 'Hide Trace' : 'View Trace'}
+        </button>
+      </div>
+
+      <div className="flex-1 flex overflow-hidden">
+        {/* MESSAGE AREA */}
+        <div className={`flex-1 overflow-y-auto p-6 space-y-6 transition-all ${showTrace ? 'w-2/3' : 'w-full'}`}>
+          {messages.length === 0 && (
+            <div className="h-full flex flex-col items-center justify-center text-zinc-400 space-y-2">
+              <p className="text-lg font-medium">No messages yet</p>
+              <p className="text-sm">Start a conversation below!</p>
             </div>
-          </div>
-        ))}
-        {isLoading && messages[messages.length - 1]?.role === 'user' && (
-          <div className="flex justify-start">
-            <div className="bg-zinc-100 dark:bg-zinc-800 p-4 rounded-2xl animate-pulse">
-              <div className="h-4 w-12 bg-zinc-300 dark:bg-zinc-600 rounded"></div>
+          )}
+          
+          {messages.map((m: any) => (
+            <div 
+              key={m.id} 
+              className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
+            >
+              <div className={`max-w-[80%] p-4 rounded-2xl ${
+                m.role === 'user' 
+                  ? 'bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900' 
+                  : 'bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200'
+              }`}>
+                {m.parts.map((part: any, i: number) => (
+                  part.type === 'text' ? (
+                    <p key={i} className="text-sm leading-relaxed whitespace-pre-wrap">{part.text}</p>
+                  ) : null
+                ))}
+              </div>
+            </div>
+          ))}
+          {isLoading && messages[messages.length - 1]?.role === 'user' && (
+            <div className="flex justify-start">
+              <div className="bg-zinc-100 dark:bg-zinc-800 p-4 rounded-2xl">
+                <div className="flex space-x-2">
+                  <div className="w-2 h-2 bg-zinc-400 rounded-full animate-bounce" />
+                  <div className="w-2 h-2 bg-zinc-400 rounded-full animate-bounce [animation-delay:0.2s]" />
+                  <div className="w-2 h-2 bg-zinc-400 rounded-full animate-bounce [animation-delay:0.4s]" />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* TRACE AREA (Part 8: Observability) */}
+        {showTrace && (
+          <div className="w-1/3 border-l border-zinc-100 dark:border-zinc-800 bg-zinc-50/30 dark:bg-zinc-900/30 overflow-y-auto p-4">
+            <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-4">Execution Trace</h3>
+            <div className="space-y-4">
+              {steps.length === 0 && <p className="text-xs text-zinc-400 italic">No activity yet...</p>}
+              {steps.map((step, i) => (
+                <div key={i} className="border-l-2 border-zinc-200 dark:border-zinc-700 pl-3 py-1">
+                  <div className="flex justify-between items-start">
+                    <span className="text-[10px] font-bold text-zinc-500 uppercase">{step.agent_name}</span>
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-bold ${
+                      step.step_type === 'thought' ? 'bg-blue-100 text-blue-600' :
+                      step.step_type === 'action' ? 'bg-amber-100 text-amber-600' :
+                      step.step_type === 'observation' ? 'bg-green-100 text-green-600' :
+                      'bg-zinc-100 text-zinc-600'
+                    }`}>
+                      {step.step_type}
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1 line-clamp-3">{step.content}</p>
+                </div>
+              ))}
             </div>
           </div>
         )}
       </div>
 
       {/* INPUT AREA */}
-      <div className="p-4 border-t border-zinc-100 dark:border-zinc-800">
-        <form onSubmit={handleSubmit} className="relative">
+      <form onSubmit={handleSubmit} className="p-4 border-t border-zinc-200 dark:border-zinc-800">
+        <div className="flex space-x-4">
           <input
             value={input}
-            onChange={handleInputChange}
-            placeholder="Ask me anything..."
-            className="w-full px-6 py-4 pr-16 rounded-xl bg-zinc-50 dark:bg-zinc-800 border-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-50 outline-none dark:text-zinc-100"
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Send a message..."
+            className="flex-1 px-4 py-2 bg-zinc-100 dark:bg-zinc-800 border-none rounded-xl focus:ring-2 focus:ring-zinc-500 outline-none text-zinc-800 dark:text-zinc-200"
             disabled={isLoading}
           />
           <button
             type="submit"
             disabled={isLoading || !input.trim()}
-            className="absolute right-2 top-2 bottom-2 px-4 bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900 rounded-lg font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+            className="px-6 py-2 bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900 rounded-xl font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
           >
             Send
           </button>
-        </form>
-      </div>
+        </div>
+      </form>
     </div>
   );
 }

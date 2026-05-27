@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase-server';
+import { jobQueue } from '@/queue/jobQueue';
 
 /**
  * dbService handles all direct PostgreSQL interactions for conversations and messages.
@@ -6,10 +6,23 @@ import { createClient } from '@/lib/supabase-server';
  */
 export const dbService = {
   /**
+   * Internal helper to get the correct Supabase client.
+   */
+  async _getSupabase() {
+    if (typeof window === 'undefined') {
+      const { createClient } = await import('@/lib/supabase-server');
+      return await createClient();
+    } else {
+      const { createClient } = await import('@/lib/supabase');
+      return createClient();
+    }
+  },
+
+  /**
    * Fetches all conversations for the current user.
    */
   async getConversations() {
-    const supabase = await createClient();
+    const supabase = await this._getSupabase();
     const { data, error } = await supabase
       .from('conversations')
       .select('*')
@@ -23,7 +36,7 @@ export const dbService = {
    * Creates a new conversation.
    */
   async createConversation(title: string) {
-    const supabase = await createClient();
+    const supabase = await this._getSupabase();
     const { data: { user } } = await supabase.auth.getUser();
     
     if (!user) throw new Error('Unauthorized');
@@ -42,7 +55,7 @@ export const dbService = {
    * Fetches all messages for a specific conversation.
    */
   async getMessages(conversationId: string) {
-    const supabase = await createClient();
+    const supabase = await this._getSupabase();
     const { data, error } = await supabase
       .from('messages')
       .select('*')
@@ -55,9 +68,13 @@ export const dbService = {
 
   /**
    * Saves a message (User or Assistant) to the database.
+   * Now triggers an asynchronous embedding job.
    */
   async saveMessage(conversationId: string, role: 'user' | 'assistant', content: string) {
-    const supabase = await createClient();
+    const supabase = await this._getSupabase();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Unauthorized');
+
     const { data, error } = await supabase
       .from('messages')
       .insert([{ 
@@ -69,6 +86,15 @@ export const dbService = {
       .single();
 
     if (error) throw error;
+
+    // ASYNC: Enqueue embedding job
+    await jobQueue.enqueue(user.id, 'embedding_generation', {
+      messageId: data.id,
+      conversationId,
+      userId: user.id,
+      content
+    });
+
     return data;
   }
 };

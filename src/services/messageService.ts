@@ -34,15 +34,33 @@ export const messageService = {
       throw new Error('You must be logged in to save messages.');
     }
 
-    // 2. Perform the insert
-    // We explicitly include user_id to be transparent, though the DB default would also work.
-    // RLS policy "Users can insert own messages" will verify: auth.uid() === user_id
+    // 2. Get or create a default conversation
+    let { data: conversation } = await supabase
+      .from('conversations')
+      .select('id')
+      .eq('user_id', user.id)
+      .limit(1)
+      .single();
+
+    if (!conversation) {
+      const { data: newConversation, error: convError } = await supabase
+        .from('conversations')
+        .insert([{ user_id: user.id, title: 'Default Conversation' }])
+        .select()
+        .single();
+      
+      if (convError) throw convError;
+      conversation = newConversation;
+    }
+
+    // 3. Perform the insert
     const { data, error } = await supabase
       .from('messages')
       .insert([
         { 
           content, 
-          user_id: user.id 
+          conversation_id: conversation.id,
+          role: 'user'
         }
       ])
       .select()

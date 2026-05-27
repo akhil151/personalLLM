@@ -1,6 +1,5 @@
 'use client';
 
-import { dbService } from '@/services/dbService';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 
@@ -15,7 +14,8 @@ export function ChatSidebar({ currentConversationId }: SidebarProps) {
   useEffect(() => {
     async function load() {
       try {
-        const data = await dbService.getConversations();
+        const res = await fetch('/api/conversations');
+        const data = await res.json();
         setConversations(data || []);
       } catch (err) {
         console.error(err);
@@ -28,7 +28,12 @@ export function ChatSidebar({ currentConversationId }: SidebarProps) {
 
   const createNewChat = async () => {
     try {
-      const newChat = await dbService.createConversation('New Chat');
+      const res = await fetch('/api/conversations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'New Chat' }),
+      });
+      const newChat = await res.json();
       window.location.href = `/dashboard/chat/${newChat.id}`;
     } catch (err) {
       console.error(err);

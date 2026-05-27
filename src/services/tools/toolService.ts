@@ -82,21 +82,27 @@ export const tools = [
   {
     type: 'function',
     function: {
-      name: 'schedule_task',
-      description: 'Schedule a task for future execution',
+      name: 'save_research_report',
+      description: 'Save a structured research report to the knowledge base',
       parameters: {
         type: 'object',
         properties: {
-          task_id: { type: 'string' },
-          schedule_time: { type: 'string', description: 'ISO format date string' },
+          title: { type: 'string' },
+          content: { type: 'string' },
+          source_urls: { type: 'array', items: { type: 'string' } },
         },
-        required: ['task_id', 'schedule_time'],
+        required: ['title', 'content'],
       },
     },
   }
 ];
 
 export const toolHandlers: Record<string, (args: any) => Promise<any>> = {
+  save_research_report: async (args) => {
+    console.log('EXECUTING TOOL: save_research_report', args);
+    // In production, this would call ingestionService
+    return { success: true, message: `Report "${args.title}" saved successfully.` };
+  },
   create_task: async (args) => {
     console.log('EXECUTING TOOL: create_task', args);
     return { success: true, message: `Task "${args.title}" created successfully.` };

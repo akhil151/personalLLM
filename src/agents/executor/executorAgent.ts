@@ -2,7 +2,7 @@ import { IAgent, AgentInput, AgentOutput, agentRegistry } from '@/orchestrator/a
 import { openaiService } from '@/services/openaiService';
 import { orchestratorService } from '@/orchestrator/orchestratorService';
 import { tools, toolHandlers } from '@/services/tools/toolService';
-import { createClient } from '@/lib/supabase-server';
+import { createAdminClient } from '@/lib/supabase-admin';
 
 /**
  * ExecutorAgent performs the actual work.
@@ -55,7 +55,7 @@ export class ExecutorAgent implements IAgent {
       if (this.dangerousActions.includes(decision.tool)) {
         await orchestratorService.logStep(runId, this.name, 'observation', `Action "${decision.tool}" requires human approval.`);
         
-        const supabase = await createClient();
+        const supabase = createAdminClient();
         const { data: approval, error } = await supabase
           .from('approval_requests')
           .insert([{

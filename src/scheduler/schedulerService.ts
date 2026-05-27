@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase-server';
+import { createAdminClient } from '@/lib/supabase-admin';
 import { workflowRuntime } from '@/runtime/workflowRuntime';
 
 /**
@@ -14,7 +14,7 @@ export const schedulerService = {
    * Schedules a new autonomous task.
    */
   async scheduleTask(userId: string, name: string, nextRun: Date, type: string, payload: any = {}) {
-    const supabase = await createClient();
+    const supabase = createAdminClient();
 
     const { data, error } = await supabase
       .from('autonomous_schedules')
@@ -37,7 +37,7 @@ export const schedulerService = {
    * Scans for due tasks and executes them.
    */
   async processSchedules() {
-    const supabase = await createClient();
+    const supabase = createAdminClient();
     const now = new Date().toISOString();
 
     const { data: dueTasks, error } = await supabase

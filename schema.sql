@@ -1,17 +1,18 @@
--- AI Platform: Clean Reinstall Schema
--- This script performs a clean reset of the tables to ensure the schema matches our code perfectly.
--- CAUTION: This will delete existing chat data. Use this for fresh development setup.
+-- AI PLATFORM: UNIFIED SCHEMA (CONVERGED)
+-- This schema represents the single source of truth for the autonomous runtime.
+-- It enforces inherited ownership models and infrastructure-level isolation.
 
--- 1. Drop existing tables in reverse order of dependency
-DROP TABLE IF EXISTS ai_logs CASCADE;
-DROP TABLE IF EXISTS message_embeddings CASCADE;
-DROP TABLE IF EXISTS messages CASCADE;
-DROP TABLE IF EXISTS conversations CASCADE;
-
--- 2. Enable Extensions
+-- ==================================================
+-- 1. EXTENSIONS
+-- ==================================================
 CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- 3. Conversations Table
+-- ==================================================
+-- 2. CORE COMMUNICATION (Inherited Ownership)
+-- ==================================================
+
+-- Users -> Conversations -> Messages
 CREATE TABLE conversations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -19,7 +20,6 @@ CREATE TABLE conversations (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
 );
 
--- 4. Messages Table
 CREATE TABLE messages (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
@@ -28,7 +28,74 @@ CREATE TABLE messages (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
 );
 
--- 5. Message Embeddings Table (Semantic Memory)
+-- ==================================================
+-- 3. AUTONOMOUS RUNTIME (Agent Execution)
+-- ==================================================
+
+CREATE TABLE agent_runs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    conversation_id UUID REFERENCES conversations(id) ON DELETE CASCADE,
+    goal TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'completed', 'failed', 'paused', 'recovered')),
+    metadata JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
+);
+
+CREATE TABLE agent_tasks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    run_id UUID NOT NULL REFERENCES agent_runs(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    description TEXT,
+    priority INTEGER DEFAULT 0,
+    status TEXT NOT NULL CHECK (status IN ('pending', 'in_progress', 'completed', 'failed')),
+    assigned_agent TEXT,
+    dependencies UUID[] DEFAULT '{}',
+    output JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
+);
+
+-- ==================================================
+-- 4. INFRASTRUCTURE & DURABILITY
+-- ==================================================
+
+CREATE TABLE background_jobs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    run_id UUID REFERENCES agent_runs(id) ON DELETE SET NULL,
+    job_type TEXT NOT NULL,
+    payload JSONB NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('queued', 'processing', 'completed', 'failed', 'retrying')),
+    attempts INTEGER DEFAULT 0,
+    max_attempts INTEGER DEFAULT 3,
+    error_log TEXT,
+    next_run_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
+);
+
+CREATE TABLE workflow_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    run_id UUID REFERENCES agent_runs(id) ON DELETE CASCADE,
+    event_type TEXT NOT NULL,
+    payload JSONB NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
+);
+
+CREATE TABLE workflow_snapshots (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    run_id UUID REFERENCES agent_runs(id) ON DELETE CASCADE,
+    state_data JSONB NOT NULL,
+    step_index INTEGER NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
+);
+
+-- ==================================================
+-- 5. SEMANTIC MEMORY (Vector Store)
+-- ==================================================
+
 CREATE TABLE message_embeddings (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     message_id UUID REFERENCES messages(id) ON DELETE CASCADE,
@@ -39,65 +106,44 @@ CREATE TABLE message_embeddings (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
 );
 
--- 6. AI Observability Logs
-CREATE TABLE ai_logs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-    conversation_id UUID REFERENCES conversations(id) ON DELETE CASCADE,
-    model TEXT NOT NULL,
-    prompt_tokens INTEGER,
-    completion_tokens INTEGER,
-    total_tokens INTEGER,
-    latency_ms INTEGER,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
-);
+-- ==================================================
+-- 6. ROW LEVEL SECURITY (RLS)
+-- ==================================================
 
--- 7. Helper Functions
-CREATE OR REPLACE FUNCTION match_messages (
-  query_embedding vector(1536),
-  match_threshold float,
-  match_count int,
-  p_user_id uuid
-)
-RETURNS TABLE (
-  id uuid,
-  content text,
-  conversation_id uuid,
-  similarity float
-)
-LANGUAGE plpgsql
-AS $$
-BEGIN
-  RETURN QUERY
-  SELECT
-    me.id,
-    me.content,
-    me.conversation_id,
-    1 - (me.embedding <=> query_embedding) AS similarity
-  FROM message_embeddings me
-  WHERE me.user_id = p_user_id
-    AND 1 - (me.embedding <=> query_embedding) > match_threshold
-  ORDER BY me.embedding <=> query_embedding
-  LIMIT match_count;
-END;
-$$;
-
--- 8. Row Level Security (RLS)
 ALTER TABLE conversations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE agent_runs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE agent_tasks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE background_jobs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE workflow_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE workflow_snapshots ENABLE ROW LEVEL SECURITY;
 ALTER TABLE message_embeddings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE ai_logs ENABLE ROW LEVEL SECURITY;
 
--- Policies
+-- Conversations: Direct Ownership
 CREATE POLICY "Users can manage own conversations" ON conversations FOR ALL USING (auth.uid() = user_id);
+
+-- Messages: Inherited Ownership
 CREATE POLICY "Users can manage messages in own conversations" ON messages FOR ALL 
 USING (EXISTS (SELECT 1 FROM conversations WHERE id = messages.conversation_id AND user_id = auth.uid()));
-CREATE POLICY "Users can manage own embeddings" ON message_embeddings FOR ALL USING (auth.uid() = user_id);
-CREATE POLICY "Users can view own AI logs" ON ai_logs FOR SELECT USING (auth.uid() = user_id);
 
--- 9. Indexes
+-- Runs & Tasks: Direct/Inherited
+CREATE POLICY "Users can manage own agent runs" ON agent_runs FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can manage tasks of own runs" ON agent_tasks FOR ALL 
+USING (EXISTS (SELECT 1 FROM agent_runs WHERE id = agent_tasks.run_id AND user_id = auth.uid()));
+
+-- Infrastructure: Direct Ownership
+CREATE POLICY "Users can manage own background jobs" ON background_jobs FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can manage events of own runs" ON workflow_events FOR ALL 
+USING (EXISTS (SELECT 1 FROM agent_runs WHERE id = workflow_events.run_id AND user_id = auth.uid()));
+CREATE POLICY "Users can manage snapshots of own runs" ON workflow_snapshots FOR ALL 
+USING (EXISTS (SELECT 1 FROM agent_runs WHERE id = workflow_snapshots.run_id AND user_id = auth.uid()));
+CREATE POLICY "Users can manage own embeddings" ON message_embeddings FOR ALL USING (auth.uid() = user_id);
+
+-- ==================================================
+-- 7. INDEXES
+-- ==================================================
 CREATE INDEX idx_conversations_user_id ON conversations(user_id);
 CREATE INDEX idx_messages_conversation_id ON messages(conversation_id);
-CREATE INDEX idx_embeddings_user_id ON message_embeddings(user_id);
-CREATE INDEX idx_ai_logs_user_id ON ai_logs(user_id);
+CREATE INDEX idx_agent_runs_user_id ON agent_runs(user_id);
+CREATE INDEX idx_background_jobs_user_id ON background_jobs(user_id);
 CREATE INDEX idx_message_embeddings_vector ON message_embeddings USING hnsw (embedding vector_cosine_ops);

@@ -6,7 +6,7 @@ import { promptService } from '@/services/promptService';
 import { observabilityService } from '@/services/observability/observabilityService';
 import { executionPipeline } from '@/orchestrator/executionPipeline';
 import '@/agents'; // Register agents
-import { OpenAIStream, StreamingTextResponse } from 'ai';
+import { streamText, convertToModelMessages, UIMessage } from 'ai';
 
 /**
  * PHASE 5 AI CHAT ROUTE
@@ -19,22 +19,23 @@ export async function POST(req: Request) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return new Response('Unauthorized', { status: 401 });
 
-    const { message, conversationId } = await req.json();
+    const { messages: history, conversationId }: { messages: UIMessage[], conversationId: string } = await req.json();
+    
+    // In AI SDK 6, history contains UIMessages. We need the text of the last message.
+    const lastMessagePart = history[history.length - 1].parts.find(p => p.type === 'text');
+    const lastMessage = lastMessagePart?.type === 'text' ? lastMessagePart.text : '';
 
     // 1. SAVE USER MESSAGE
-    await dbService.saveMessage(conversationId, 'user', message);
+    await dbService.saveMessage(conversationId, 'user', lastMessage);
 
     // 2. TRIGGER DURABLE WORKFLOW PIPELINE
-    // This is the "Durable Execution" entry point.
-    // The run is now checkpointed and can survive server restarts.
-    const result = await executionPipeline.run(user.id, conversationId, message);
+    const result = await executionPipeline.run(user.id, conversationId, lastMessage);
 
     if (!result.success) {
       return new Response(JSON.stringify({ error: result.error }), { status: 500 });
     }
 
     // 3. GENERATE FINAL RESPONSE BASED ON AGENT RUN
-    // We fetch the execution steps to summarize what happened.
     const { data: steps } = await supabase
       .from('execution_steps')
       .select('*')
@@ -42,21 +43,18 @@ export async function POST(req: Request) {
       .order('created_at', { ascending: true });
 
     const summaryPrompt = `The following agents just completed a multi-step task for the user.
-    Goal: ${message}
+    Goal: ${lastMessage}
     Execution Steps: ${JSON.stringify(steps)}
     
     Provide a final, helpful response to the user summarizing the outcome and any actions taken.`;
 
-    const response = await openaiService.getChatStream([
-      { role: 'system', content: promptService.getSystemPrompt() },
-      { role: 'user', content: summaryPrompt }
-    ]);
-
-    // 4. STREAMING & LOGGING
-    const stream = OpenAIStream(response, {
-      onCompletion: async (completion) => {
+    const result_stream = await streamText({
+      model: openaiService.getProvider(),
+      system: promptService.getSystemPrompt(),
+      messages: [{ role: 'user', content: summaryPrompt }],
+      onFinish: async ({ text }) => {
         const endTime = Date.now();
-        await dbService.saveMessage(conversationId, 'assistant', completion);
+        await dbService.saveMessage(conversationId, 'assistant', text);
         await observabilityService.logChatEvent({
           userId: user.id,
           conversationId,
@@ -68,7 +66,7 @@ export async function POST(req: Request) {
       },
     });
 
-    return new StreamingTextResponse(stream);
+    return result_stream.toUIMessageStreamResponse();
 
   } catch (error: any) {
     console.error('Phase 4 Chat Error:', error);

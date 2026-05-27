@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase-server';
+import { createAdminClient } from '@/lib/supabase-admin';
 
 /**
  * BrowserSafetyGuard protects the environment from runaway or malicious agents.
@@ -9,11 +9,11 @@ import { createClient } from '@/lib/supabase-server';
  * 3. Loop Detection: Identifying if the agent is stuck in a navigation cycle.
  */
 export const browserSafetyGuard = {
-  private blockedDomains = ['malware.com', 'phishing.net'];
-  private maxActionsPerSession = 50;
+  blockedDomains: ['malware.com', 'phishing.net'],
+  maxActionsPerSession: 50,
 
   async isActionSafe(sessionId: string, action: any) {
-    const supabase = await createClient();
+    const supabase = createAdminClient();
 
     // 1. Check Domain
     if (action.type === 'navigate' && this.blockedDomains.some(d => action.payload.url.includes(d))) {

@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase-server';
+import { createAdminClient } from '@/lib/supabase-admin';
 import { WorkflowStateMachine, WorkflowContext } from './workflowStateMachine';
 
 /**
@@ -14,17 +14,17 @@ export const workflowRuntime = {
    * Starts or resumes a workflow.
    */
   async startWorkflow(userId: string, conversationId: string, type: string, initialVars: any = {}) {
-    const supabase = await createClient();
+    const supabase = createAdminClient();
 
-    // 1. Create the Run record
+    // 1. Create the Run record in agent_runs (Consolidated)
     const { data: run, error } = await supabase
-      .from('workflow_runs')
+      .from('agent_runs')
       .insert([{
         user_id: userId,
         conversation_id: conversationId,
-        workflow_type: type,
+        goal: initialVars.goal || 'Autonomous Run',
         status: 'running',
-        current_state: initialVars
+        metadata: { workflow_type: type, ...initialVars }
       }])
       .select()
       .single();
@@ -44,13 +44,12 @@ export const workflowRuntime = {
 
   /**
    * Saves a checkpoint of the workflow.
-   * This is what makes the workflow "durable".
    */
   async checkpoint(sm: WorkflowStateMachine) {
     const supabase = await createClient();
     const context = sm.getContext();
 
-    // 1. Save Snapshot
+    // 1. Save Snapshot (We still use snapshots for durable state)
     await supabase
       .from('workflow_snapshots')
       .insert([{
@@ -59,12 +58,12 @@ export const workflowRuntime = {
         step_index: context.stepIndex
       }]);
 
-    // 2. Update Run Record
+    // 2. Update Run Record in agent_runs
     await supabase
-      .from('workflow_runs')
+      .from('agent_runs')
       .update({
-        status: sm.getState(),
-        current_state: context.variables,
+        status: sm.getState() as any,
+        metadata: { ...context.variables },
         updated_at: new Date().toISOString()
       })
       .eq('id', context.runId);
@@ -74,7 +73,7 @@ export const workflowRuntime = {
    * Recovers a workflow from its last snapshot.
    */
   async recover(runId: string) {
-    const supabase = await createClient();
+    const supabase = createAdminClient();
 
     // 1. Get the latest snapshot
     const { data: snapshot, error: snapError } = await supabase
@@ -89,7 +88,7 @@ export const workflowRuntime = {
 
     // 2. Get run details
     const { data: run, error: runError } = await supabase
-      .from('workflow_runs')
+      .from('agent_runs')
       .select('*')
       .eq('id', runId)
       .single();

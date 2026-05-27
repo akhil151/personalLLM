@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase-server';
+import { createAdminClient } from '@/lib/supabase-admin';
 
 export type JobType = 'research' | 'embedding_generation' | 'document_analysis' | 'web_crawl';
 
@@ -15,7 +15,7 @@ export const jobQueue = {
    * Enqueues a new background job.
    */
   async enqueue(userId: string, type: JobType, payload: any, runId?: string) {
-    const supabase = await createClient();
+    const supabase = createAdminClient();
 
     const { data, error } = await supabase
       .from('background_jobs')
@@ -38,7 +38,7 @@ export const jobQueue = {
    * Fetches the next available job to process.
    */
   async getNextJob() {
-    const supabase = await createClient();
+    const supabase = createAdminClient();
     const { data, error } = await supabase
       .from('background_jobs')
       .select('*')

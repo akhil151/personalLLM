@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase-server';
+import { createAdminClient } from '@/lib/supabase-admin';
 
 export type EventType = 
   | 'TASK_CREATED' 
@@ -40,7 +40,7 @@ class EventBus {
     console.log(`[EVENT] ${type}:`, payload);
 
     // 1. Persist to DB for durability
-    const supabase = await createClient();
+    const supabase = createAdminClient();
     await supabase
       .from('workflow_events')
       .insert([{
@@ -61,6 +61,15 @@ class EventBus {
     const handlers = this.subscribers.get(type) || [];
     handlers.push(handler);
     this.subscribers.set(type, handlers);
+  }
+
+  /**
+   * Unsubscribes a handler from a specific event type.
+   */
+  unsubscribe(type: EventType, handler: (event: WorkflowEvent) => Promise<void>) {
+    const handlers = this.subscribers.get(type) || [];
+    const filtered = handlers.filter(h => h !== handler);
+    this.subscribers.set(type, filtered);
   }
 }
 

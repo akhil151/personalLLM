@@ -1,13 +1,7 @@
-import { createClient } from '@/lib/supabase-server';
+import { createAdminClient } from '@/lib/supabase-admin';
 
 /**
- * ObservabilityService tracks AI performance and costs.
- * 
- * WHY THIS MATTERS:
- * In production, you need to know:
- * 1. How much money are we spending? (Tokens)
- * 2. Is the AI slow? (Latency)
- * 3. Which models are most effective?
+ * ObservabilityService tracks AI performance, costs, and runtime health.
  */
 export const observabilityService = {
   async logChatEvent(data: {
@@ -18,7 +12,7 @@ export const observabilityService = {
     completionTokens: number;
     latencyMs: number;
   }) {
-    const supabase = await createClient();
+    const supabase = createAdminClient();
 
     const { error } = await supabase.from('ai_logs').insert({
       user_id: data.userId,
@@ -30,6 +24,28 @@ export const observabilityService = {
       latency_ms: data.latencyMs,
     });
 
-    if (error) console.error('Error logging AI event:', error);
+    if (error) console.error('[OBSERVABILITY] Error logging AI event:', error);
+  },
+
+  /**
+   * Tracks worker health and queue latency.
+   */
+  async logWorkerEvent(type: 'job_started' | 'job_completed' | 'job_failed', jobId: string, metadata: any = {}) {
+    console.log(`[OBSERVABILITY] Worker ${type}: ${jobId}`, metadata);
+    // In a full implementation, this would write to a 'worker_metrics' table
+  },
+
+  /**
+   * Tracks recovery operations.
+   */
+  async logRecoveryEvent(runId: string, details: string) {
+    console.log(`[OBSERVABILITY] Recovery triggered for ${runId}: ${details}`);
+    const supabase = createAdminClient();
+    await supabase.from('safety_logs').insert({
+      workflow_run_id: runId,
+      violation_type: 'recovery_triggered',
+      details,
+      action_taken: 'resumed'
+    });
   }
 };

@@ -3,6 +3,7 @@ import { browserSessionManager } from './browserSessionManager';
 import { browserRuntime } from './browserRuntime';
 import { visionService } from '@/vision/visionService';
 import { orchestratorService } from '@/orchestrator/orchestratorService';
+import { createAdminClient } from '@/lib/supabase-admin';
 
 /**
  * BrowserAgent is an Operational AI capable of interacting with the web.
@@ -15,7 +16,7 @@ import { orchestratorService } from '@/orchestrator/orchestratorService';
  */
 export class BrowserAgent implements IAgent {
   name = 'Browser Agent';
-  role = 'executor' as any; // Reusing executor role for environmental interaction
+  role = 'browser' as const;
 
   async execute(input: AgentInput): Promise<AgentOutput> {
     const { runId, userId, data } = input;
@@ -31,19 +32,30 @@ export class BrowserAgent implements IAgent {
       }
 
       // 2. Initial Navigation (if URL provided)
-      const url = task.description.match(/https?:\/\/[^\s]+/)?.[0];
+      const urlMatch = task.description.match(/https?:\/\/[^\s]+/);
+      const url = urlMatch ? urlMatch[0] : null;
       if (url) {
         await browserRuntime.navigate(session.id, url);
       }
 
-      // 3. Multimodal Perception Loop (Simulated for 1 step)
-      const screenshotUrl = `https://placehold.co/1280x720?text=Browser+State+for+${encodeURIComponent(task.title)}`;
+      // 3. Multimodal Perception Loop
+      // Fetch the latest snapshot for this session
+      const supabase = createAdminClient();
+      const { data: snapshot } = await supabase
+        .from('page_snapshots')
+        .select('*')
+        .eq('session_id', session.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      const screenshotUrl = snapshot?.screenshot_url || `https://placehold.co/1280x720?text=No+Screenshot+Available`;
       const perception = await visionService.analyzeScreenshot(screenshotUrl, goal);
 
       await orchestratorService.logStep(runId, this.name, 'observation', `Perception: ${perception.page_summary}`, null, perception);
 
       // 4. Action Execution
-      if (perception.suggested_action) {
+      if (perception.suggested_action && perception.suggested_action.type !== 'none') {
         const action = perception.suggested_action;
         await orchestratorService.logStep(runId, this.name, 'action', `Executing ${action.type} on ${action.target}`, null, action);
 

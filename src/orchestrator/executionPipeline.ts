@@ -1,3 +1,4 @@
+import { createClient } from '@/lib/supabase-server';
 import { workflowRuntime } from '@/runtime/workflowRuntime';
 import { eventBus } from '@/events/eventBus';
 import { orchestratorService } from './orchestratorService';
@@ -32,52 +33,45 @@ export const executionPipeline = {
 
       if (!planningResult.success) throw new Error(`Planning failed: ${planningResult.error}`);
       
-      // 4. Checkpoint State
+      // 4. Checkpoint State & Start Execution via Events
       sm.updateVariables({ tasks: planningResult.data.tasks });
       await workflowRuntime.checkpoint(sm);
-      await eventBus.publish(context.runId, 'PLAN_GENERATED', { tasks: planningResult.data.tasks });
+      
+      // 5. WAIT FOR COMPLETION (Stable Async Bridge)
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          cleanup();
+          reject(new Error('Workflow execution timed out.'));
+        }, 1000 * 60 * 10);
 
-      // 5. PHASE 2: EXECUTION LOOP
-      const tasks = planningResult.data.tasks;
-      for (let i = 0; i < tasks.length; i++) {
-        const task = tasks[i];
-        
-        // A. Memory Retrieval
-        const memoryResult = await orchestratorService.dispatch('memory', {
-          runId: context.runId,
-          conversationId,
-          userId,
-          data: { task, goal }
+        const onComplete = async (event: any) => {
+          if (event.runId === context.runId) {
+            cleanup();
+            resolve({ success: true, runId: context.runId });
+          }
+        };
+
+        const onFail = async (event: any) => {
+          if (event.runId === context.runId) {
+            cleanup();
+            reject(new Error(event.payload.error));
+          }
+        };
+
+        const cleanup = () => {
+          clearTimeout(timeout);
+          eventBus.unsubscribe('WORKFLOW_COMPLETED', onComplete);
+          eventBus.unsubscribe('JOB_FAILED', onFail);
+        };
+
+        eventBus.subscribe('WORKFLOW_COMPLETED', onComplete);
+        eventBus.subscribe('JOB_FAILED', onFail);
+
+        // Trigger the first task
+        eventBus.publish(context.runId, 'PLAN_GENERATED', { 
+          tasks: planningResult.data.tasks 
         });
-
-        // B. Execution
-        const executionResult = await orchestratorService.dispatch('executor', {
-          runId: context.runId,
-          conversationId,
-          userId,
-          data: { task, context: memoryResult.data, goal }
-        });
-
-        // C. REFLECTION (Phase 5 Addition)
-        const evaluation = await reflectionEngine.reflect(goal, task.title, executionResult.data);
-        
-        if (!evaluation.success) {
-          console.log(`Self-Correction Triggered: ${evaluation.correction_plan}`);
-          // In a full implementation, we would retry or adjust the task here.
-        }
-
-        // D. Checkpoint after each task
-        sm.updateVariables({ [`task_${i}_result`]: executionResult.data });
-        await workflowRuntime.checkpoint(sm);
-        await eventBus.publish(context.runId, 'TOOL_EXECUTED', { task: task.title, result: executionResult.data });
-      }
-
-      // 6. FINALIZATION
-      sm.transitionTo('completed');
-      await workflowRuntime.checkpoint(sm);
-      await eventBus.publish(context.runId, 'WORKFLOW_COMPLETED', { goal });
-
-      return { success: true, runId: context.runId };
+      });
 
     } catch (error: any) {
       console.error('Durable Pipeline Error:', error);

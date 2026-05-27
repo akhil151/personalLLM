@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase-server';
+import { createAdminClient } from '@/lib/supabase-admin';
 
 /**
  * SafetyGuard provides runtime protection for autonomous agents.
@@ -9,14 +9,14 @@ import { createClient } from '@/lib/supabase-server';
  * 3. Timeout Protection: Ensuring a workflow doesn't hang indefinitely.
  */
 export const safetyGuard = {
-  private MAX_STEPS = 20;
-  private COST_CEILING = 1.00; // $1.00 per run
+  MAX_STEPS: 20,
+  COST_CEILING: 1.00, // $1.00 per run
 
   /**
    * Validates if a workflow is safe to continue.
    */
   async checkSafety(runId: string, userId: string, currentSteps: number, currentCost: number) {
-    const supabase = await createClient();
+    const supabase = createAdminClient();
 
     // 1. Check Step Limit
     if (currentSteps >= this.MAX_STEPS) {
@@ -33,8 +33,8 @@ export const safetyGuard = {
     return { safe: true };
   },
 
-  private async logViolation(runId: string, userId: string, type: string, details: string) {
-    const supabase = await createClient();
+  async logViolation(runId: string, userId: string, type: string, details: string) {
+    const supabase = createAdminClient();
     await supabase
       .from('safety_logs')
       .insert([{
