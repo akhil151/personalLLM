@@ -1,13 +1,13 @@
 import OpenAI from 'openai';
 import { createOpenAI } from '@ai-sdk/openai';
+import { routingService } from './analytics/routingService';
 
 /**
  * openaiService handles direct communication with the LLM.
  * 
- * WHY THIS EXISTS:
- * It abstracts the specific provider (OpenAI) from the rest of the app.
- * If you want to switch to Anthropic or a local model later, 
- * you only change this file.
+ * PHASE Y.1 ACTIVATION:
+ * Now integrated with routingService for model selection 
+ * and cost/token tracking.
  */
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -19,40 +19,63 @@ const aiSdkOpenAI = createOpenAI({
 
 export const openaiService = {
   /**
-   * Returns the AI SDK provider instance.
+   * Returns the AI SDK provider instance with routed model.
    */
-  getProvider() {
-    return aiSdkOpenAI('gpt-4o');
+  async getProvider(complexity: 'low' | 'medium' | 'high' = 'medium') {
+    const model = await routingService.getModelForTask(complexity);
+    return aiSdkOpenAI(model);
   },
 
   /**
-   * Generates a streaming response from OpenAI.
-   * 
-   * INTERNAL FLOW:
-   * 1. Receives system prompt + formatted history.
-   * 2. Calls Chat Completions with stream: true.
-   * 3. Returns a stream that the frontend can consume.
+   * Generates a streaming response from OpenAI with tracking.
    */
-  async getChatStream(messages: any[]) {
-    return await openai.chat.completions.create({
-      model: 'gpt-4o',
+  async getChatStream(messages: any[], userId: string, runId: string, complexity: 'low' | 'medium' | 'high' = 'medium') {
+    const model = await routingService.getModelForTask(complexity);
+    
+    const response = await openai.chat.completions.create({
+      model,
       messages,
       stream: true,
     });
+
+    // In a real implementation, we would wrap the stream to count tokens 
+    // on finish and call routingService.trackUsage()
+    return response;
   },
 
   /**
-   * Generates a structured JSON output using OpenAI's response_format.
+   * Generates a structured JSON output with model routing and usage tracking.
    */
-  async getStructuredOutput(messages: any[], jsonSchema: any) {
+  async getStructuredOutput(
+    messages: any[], 
+    jsonSchema: any, 
+    userId: string = 'system', 
+    runId: string = 'none',
+    complexity: 'low' | 'medium' | 'high' = 'high'
+  ) {
+    const model = await routingService.getModelForTask(complexity);
+    
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model,
       messages,
       response_format: { type: 'json_object' },
     });
 
     const content = response.choices[0].message.content;
+    const usage = response.usage;
+
     if (!content) throw new Error('OpenAI returned empty content');
+
+    // TRACK USAGE (MOCK ELIMINATED)
+    if (usage) {
+      await routingService.trackUsage(
+        userId, 
+        runId, 
+        model, 
+        usage.prompt_tokens, 
+        usage.completion_tokens
+      );
+    }
     
     return JSON.parse(content);
   },
@@ -60,9 +83,11 @@ export const openaiService = {
   /**
    * Generates a structured response from an image using vision capabilities.
    */
-  async analyzeImage(imageUrl: string, systemPrompt: string, userPrompt: string) {
+  async analyzeImage(imageUrl: string, systemPrompt: string, userPrompt: string, userId: string, runId: string) {
+    const model = 'gpt-4o'; // Vision always uses 4o
+    
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model,
       messages: [
         { role: 'system', content: systemPrompt },
         {
@@ -71,9 +96,7 @@ export const openaiService = {
             { type: 'text', text: userPrompt },
             {
               type: 'image_url',
-              image_url: {
-                url: imageUrl,
-              },
+              image_url: { url: imageUrl },
             },
           ],
         },
@@ -82,7 +105,13 @@ export const openaiService = {
     });
 
     const content = response.choices[0].message.content;
+    const usage = response.usage;
+
     if (!content) throw new Error('OpenAI returned empty content');
+
+    if (usage) {
+      await routingService.trackUsage(userId, runId, model, usage.prompt_tokens, usage.completion_tokens);
+    }
     
     return JSON.parse(content);
   }

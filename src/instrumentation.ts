@@ -3,13 +3,17 @@ export async function register() {
     const { eventDispatcher } = await import('./events/eventDispatcher');
     const { workerRuntime } = await import('./workers/workerRuntime');
     const { schedulerService } = await import('./scheduler/schedulerService');
+    const { collaborationService } = await import('./orchestrator/collaborationService');
 
     console.log('--- STARTING AI INFRASTRUCTURE ---');
     
     // 1. Initialize Event Dispatcher
     eventDispatcher.init();
 
-    // 2. Start Worker Runtime (Background Jobs)
+    // 2. Initialize HITL Resume Listener
+    collaborationService.initListener().catch(err => console.error('HITL Listener Failed:', err));
+
+    // 3. Start Worker Runtime (Background Jobs)
     // We don't await this as it's a continuous loop
     workerRuntime.start().catch(err => console.error('Worker Runtime Failed:', err));
 

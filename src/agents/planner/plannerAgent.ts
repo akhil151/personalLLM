@@ -62,6 +62,16 @@ export class PlannerAgent implements IAgent {
 
       await orchestratorService.logStep(runId, this.name, 'observation', `Generated ${savedTasks.length} tasks.`);
 
+      // PHASE Y.1 ACTIVATION: Notify Research Agent if needed
+      if (goal.toLowerCase().includes('research')) {
+        await orchestratorService.sendAgentMessage(
+          runId, 
+          this.name, 
+          'Research Agent', 
+          `Starting research tasks for goal: ${goal}`
+        );
+      }
+
       return {
         success: true,
         data: { tasks: savedTasks }

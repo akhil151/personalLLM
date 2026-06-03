@@ -78,6 +78,27 @@ export const orchestratorService = {
   },
 
   /**
+   * Sends a message from one agent to another.
+   */
+  async sendAgentMessage(runId: string, sender: string, receiver: string, content: string, metadata: any = {}) {
+    const supabase = createAdminClient();
+    const { error } = await supabase
+      .from('agent_messages')
+      .insert([{
+        run_id: runId,
+        sender_agent: sender,
+        receiver_agent: receiver,
+        content,
+        metadata
+      }]);
+
+    if (error) console.error('Error sending agent message:', error);
+    
+    // Publish event for real-time listeners
+    await eventBus.publish(runId, 'AGENT_MESSAGE_SENT', { sender, receiver, content });
+  },
+
+  /**
    * Updates the overall run status.
    */
   async updateRunStatus(runId: string, status: 'completed' | 'failed' | 'paused', metadata?: any) {

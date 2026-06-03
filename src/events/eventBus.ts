@@ -6,7 +6,10 @@ export type EventType =
   | 'TOOL_EXECUTED' 
   | 'MEMORY_UPDATED' 
   | 'WORKFLOW_COMPLETED' 
-  | 'JOB_FAILED';
+  | 'JOB_FAILED'
+  | 'AGENT_MESSAGE_SENT'
+  | 'VOICE_INTERRUPTION'
+  | 'COLLABORATION_RESPONDED';
 
 export interface WorkflowEvent {
   runId: string;
