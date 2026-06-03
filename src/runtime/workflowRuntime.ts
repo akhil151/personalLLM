@@ -46,7 +46,7 @@ export const workflowRuntime = {
    * Saves a checkpoint of the workflow.
    */
   async checkpoint(sm: WorkflowStateMachine) {
-    const supabase = await createClient();
+    const supabase = createAdminClient();
     const context = sm.getContext();
 
     // 1. Save Snapshot (We still use snapshots for durable state)
@@ -105,6 +105,9 @@ export const workflowRuntime = {
 
     const sm = new WorkflowStateMachine(context);
     sm.transitionTo('recovered');
+    
+    // PERSIST RECOVERY STATUS
+    await this.checkpoint(sm);
     
     return sm;
   }

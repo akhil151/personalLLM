@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { routingService } from './analytics/routingService';
+import { openaiResilience } from './openaiResilienceService';
 
 /**
  * openaiService handles direct communication with the LLM.
@@ -8,6 +9,9 @@ import { routingService } from './analytics/routingService';
  * PHASE Y.1 ACTIVATION:
  * Now integrated with routingService for model selection 
  * and cost/token tracking.
+ * 
+ * PHASE Y.4 ENHANCEMENT:
+ * Wrapped with openaiResilience for operational reliability.
  */
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -32,15 +36,14 @@ export const openaiService = {
   async getChatStream(messages: any[], userId: string, runId: string, complexity: 'low' | 'medium' | 'high' = 'medium') {
     const model = await routingService.getModelForTask(complexity);
     
-    const response = await openai.chat.completions.create({
-      model,
-      messages,
-      stream: true,
+    return openaiResilience.execute(async () => {
+      const response = await openai.chat.completions.create({
+        model,
+        messages,
+        stream: true,
+      });
+      return response;
     });
-
-    // In a real implementation, we would wrap the stream to count tokens 
-    // on finish and call routingService.trackUsage()
-    return response;
   },
 
   /**
@@ -55,10 +58,12 @@ export const openaiService = {
   ) {
     const model = await routingService.getModelForTask(complexity);
     
-    const response = await openai.chat.completions.create({
-      model,
-      messages,
-      response_format: { type: 'json_object' },
+    const response = await openaiResilience.execute(async () => {
+      return await openai.chat.completions.create({
+        model,
+        messages,
+        response_format: { type: 'json_object' },
+      });
     });
 
     const content = response.choices[0].message.content;
@@ -86,22 +91,24 @@ export const openaiService = {
   async analyzeImage(imageUrl: string, systemPrompt: string, userPrompt: string, userId: string, runId: string) {
     const model = 'gpt-4o'; // Vision always uses 4o
     
-    const response = await openai.chat.completions.create({
-      model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: userPrompt },
-            {
-              type: 'image_url',
-              image_url: { url: imageUrl },
-            },
-          ],
-        },
-      ],
-      response_format: { type: 'json_object' },
+    const response = await openaiResilience.execute(async () => {
+      return await openai.chat.completions.create({
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: userPrompt },
+              {
+                type: 'image_url',
+                image_url: { url: imageUrl },
+              },
+            ],
+          },
+        ],
+        response_format: { type: 'json_object' },
+      });
     });
 
     const content = response.choices[0].message.content;

@@ -4,9 +4,19 @@ export async function register() {
     const { workerRuntime } = await import('./workers/workerRuntime');
     const { schedulerService } = await import('./scheduler/schedulerService');
     const { collaborationService } = await import('./orchestrator/collaborationService');
+    const { SystemHealthAudit } = await import('./services/systemHealthAudit');
 
     console.log('--- STARTING AI INFRASTRUCTURE ---');
     
+    // 0. Run System Health Audit
+    try {
+      await SystemHealthAudit.run();
+    } catch (err: any) {
+      console.error('SYSTEM HEALTH AUDIT FAILED:', err.message);
+      // In production, you might want to exit the process
+      // process.exit(1); 
+    }
+
     // 1. Initialize Event Dispatcher
     eventDispatcher.init();
 

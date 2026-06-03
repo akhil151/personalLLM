@@ -11,6 +11,12 @@ import { createClient } from '@supabase/supabase-js';
  * infrastructure-level access to the database.
  */
 export const createAdminClient = () => {
+  // SRE INSTRUMENTATION: Use mock if explicitly requested
+  if (process.env.USE_MOCK_SUPABASE === 'true') {
+    const { createAdminClient: createMock } = require('../tests/mock_admin_client');
+    return createMock();
+  }
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 

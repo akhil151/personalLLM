@@ -89,7 +89,14 @@ class VoiceService {
   async closeSession(userId: string) {
     const ws = this.connections.get(userId);
     if (ws) {
-      ws.close();
+      try {
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+          ws.on('error', () => {}); // Ignore errors during close
+          ws.close();
+        }
+      } catch (err) {
+        // Already closed or other error
+      }
       this.connections.delete(userId);
     }
   }

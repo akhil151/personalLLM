@@ -34,8 +34,8 @@ export class WorkflowStateMachine {
 
   transitionTo(newState: WorkflowState) {
     const validTransitions: Record<WorkflowState, WorkflowState[]> = {
-      'pending': ['running', 'failed'],
-      'running': ['completed', 'failed', 'paused'],
+      'pending': ['running', 'failed', 'recovered'],
+      'running': ['completed', 'failed', 'paused', 'recovered'],
       'paused': ['running', 'failed', 'recovered'],
       'recovered': ['running', 'failed'],
       'completed': [],

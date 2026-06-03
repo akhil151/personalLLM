@@ -20,8 +20,12 @@ export const eventDispatcher = {
 
     // 2. When a task is created, log it (Execution is handled by WorkerRuntime)
     eventBus.subscribe('TASK_CREATED', async (event: WorkflowEvent) => {
-      const { task, index, total } = event.payload;
-      console.log(`[ORCHESTRATION] Task ${index + 1}/${total} queued: "${task.title}"`);
+      const { task, index, total, type } = event.payload;
+      if (type === 'planning') {
+        console.log(`[ORCHESTRATION] Planning started for goal: "${event.payload.goal}"`);
+      } else if (task) {
+        console.log(`[ORCHESTRATION] Task ${index + 1}/${total} queued: "${task.title}"`);
+      }
     });
 
     // 3. When a tool is executed, determine the next step

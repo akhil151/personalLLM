@@ -11,7 +11,7 @@ import { safetyGuard } from '@/safety/safetyGuard';
  * This version replaces the linear loop with a checkpointed, event-driven flow.
  */
 export const executionPipeline = {
-  async run(userId: string, conversationId: string, goal: string) {
+  async run(userId: string, conversationId: string, goal: string): Promise<{ success: boolean; runId?: string; error?: string }> {
     // 1. Start a Durable Workflow
     const sm = await workflowRuntime.startWorkflow(userId, conversationId, 'agent_orchestration', { goal });
     const context = sm.getContext();
