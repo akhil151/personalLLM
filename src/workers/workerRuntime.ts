@@ -13,17 +13,18 @@ import { observabilityService } from '@/services/observability/observabilityServ
  */
 export const workerRuntime = {
   isRunning: false,
+  workerId: `worker-${Math.random().toString(36).substring(2, 9)}`,
 
   async start() {
     if (this.isRunning) return;
     this.isRunning = true;
-    console.log('[WORKER] Worker Runtime Started.');
+    console.log(`[WORKER] Worker Runtime Started (${this.workerId}).`);
 
     while (this.isRunning) {
       try {
-        const job = await jobQueue.getNextJob();
+        const job = await jobQueue.getNextJob(this.workerId);
         if (job) {
-          await observabilityService.logWorkerEvent('job_started', job.id, { type: job.job_type });
+          await observabilityService.logWorkerEvent('job_started', job.id, { type: job.job_type, workerId: this.workerId });
           await this.processJob(job);
           await observabilityService.logWorkerEvent('job_completed', job.id);
         } else {
@@ -44,16 +45,13 @@ export const workerRuntime = {
     console.log(`[WORKER] Processing Job ${job.id} (${job.job_type})...`);
     const supabase = createAdminClient();
 
-    await supabase.from('background_jobs').update({ 
-      status: 'processing',
-      updated_at: new Date().toISOString() 
-    }).eq('id', job.id);
-
     try {
       await this.executeJobLogic(job);
 
       await supabase.from('background_jobs').update({ 
         status: 'completed',
+        lease_owner: null,
+        lease_expires_at: null,
         updated_at: new Date().toISOString() 
       }).eq('id', job.id);
       
@@ -70,6 +68,8 @@ export const workerRuntime = {
         status: isFinalFailure ? 'failed' : 'retrying',
         attempts: attempts,
         error_log: err.message,
+        lease_owner: null,
+        lease_expires_at: null,
         next_run_at: new Date(Date.now() + Math.pow(2, attempts) * 5000).toISOString(),
         updated_at: new Date().toISOString()
       }).eq('id', job.id);

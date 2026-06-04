@@ -44,13 +44,15 @@ export const workflowRuntime = {
 
   /**
    * Saves a checkpoint of the workflow.
+   * Ensures the lease is cleared and state is persisted atomically.
    */
   async checkpoint(sm: WorkflowStateMachine) {
     const supabase = createAdminClient();
     const context = sm.getContext();
+    const now = new Date().toISOString();
 
-    // 1. Save Snapshot (We still use snapshots for durable state)
-    await supabase
+    // 1. Save Snapshot (Durable State)
+    const { error: snapError } = await supabase
       .from('workflow_snapshots')
       .insert([{
         workflow_run_id: context.runId,
@@ -58,43 +60,53 @@ export const workflowRuntime = {
         step_index: context.stepIndex
       }]);
 
-    // 2. Update Run Record in agent_runs
-    await supabase
+    if (snapError) throw new Error(`Checkpoint failed: ${snapError.message}`);
+
+    // 2. Update Run Record in agent_runs and RELEASE LEASE
+    const { error: runError } = await supabase
       .from('agent_runs')
       .update({
         status: sm.getState() as any,
         metadata: { ...context.variables },
-        updated_at: new Date().toISOString()
+        lease_owner: null,      // Release ownership
+        lease_expires_at: null, // Clear expiry
+        updated_at: now
       })
       .eq('id', context.runId);
+
+    if (runError) throw new Error(`Failed to update run status: ${runError.message}`);
   },
 
   /**
    * Recovers a workflow from its last snapshot.
+   * Implementation is idempotent: multiple calls return the same rehydrated state.
    */
   async recover(runId: string) {
     const supabase = createAdminClient();
 
-    // 1. Get the latest snapshot
-    const { data: snapshot, error: snapError } = await supabase
-      .from('workflow_snapshots')
-      .select('*')
-      .eq('workflow_run_id', runId)
-      .order('step_index', { ascending: false })
-      .limit(1)
-      .single();
+    // 1. Get the latest snapshot and run record in parallel for consistency
+    const [snapResult, runResult] = await Promise.all([
+      supabase
+        .from('workflow_snapshots')
+        .select('*')
+        .eq('workflow_run_id', runId)
+        .order('step_index', { ascending: false })
+        .limit(1)
+        .single(),
+      supabase
+        .from('agent_runs')
+        .select('*')
+        .eq('id', runId)
+        .single()
+    ]);
 
-    if (snapError) throw snapError;
+    if (snapResult.error) throw new Error(`Recovery failed: Snapshot not found for ${runId}`);
+    if (runResult.error) throw new Error(`Recovery failed: Run ${runId} not found`);
 
-    // 2. Get run details
-    const { data: run, error: runError } = await supabase
-      .from('agent_runs')
-      .select('*')
-      .eq('id', runId)
-      .single();
+    const snapshot = snapResult.data;
+    const run = runResult.data;
 
-    if (runError) throw runError;
-
+    // 2. Reconstruct Context from source of truth
     const context: WorkflowContext = {
       runId: run.id,
       userId: run.user_id,
@@ -104,10 +116,18 @@ export const workflowRuntime = {
     };
 
     const sm = new WorkflowStateMachine(context);
-    sm.transitionTo('recovered');
     
-    // PERSIST RECOVERY STATUS
-    await this.checkpoint(sm);
+    // Only transition if not already in a terminal/recovered state
+    if (run.status !== 'completed' && run.status !== 'failed') {
+      sm.transitionTo('recovered');
+      // Update status to 'recovered' but DO NOT clear lease yet if this is part of a recovery claim
+      // Actually, scanAndRecover handles the lease. 
+      // We update the run status so other parts of the system know it's being handled.
+      await supabase.from('agent_runs').update({ 
+        status: 'recovered',
+        updated_at: new Date().toISOString()
+      }).eq('id', runId);
+    }
     
     return sm;
   }

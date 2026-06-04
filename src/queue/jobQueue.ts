@@ -35,20 +35,47 @@ export const jobQueue = {
   },
 
   /**
-   * Fetches the next available job to process.
+   * Fetches the next available job to process using atomic claiming.
+   * This prevents multiple workers from picking up the same job.
    */
-  async getNextJob() {
+  async getNextJob(workerId: string = 'default-worker') {
     const supabase = createAdminClient();
-    const { data, error } = await supabase
+    const now = new Date().toISOString();
+    const leaseTime = new Date(Date.now() + 1000 * 60 * 5).toISOString(); // 5 min lease
+
+    // 1. Find a candidate job
+    const { data: candidate, error: findError } = await supabase
       .from('background_jobs')
-      .select('*')
+      .select('id')
       .or('status.eq.queued,status.eq.retrying')
-      .lt('next_run_at', new Date().toISOString())
+      .lt('next_run_at', now)
+      .or(`lease_expires_at.lt.${now},lease_owner.is.null`)
       .order('created_at', { ascending: true })
       .limit(1)
       .single();
 
-    if (error && error.code !== 'PGRST116') throw error; // PGRST116 is "no rows found"
+    if (findError || !candidate) return null;
+
+    // 2. ATOMIC CLAIM
+    const { data, error } = await supabase
+      .from('background_jobs')
+      .update({ 
+        status: 'processing',
+        lease_owner: workerId,
+        lease_expires_at: leaseTime,
+        updated_at: now
+      })
+      .eq('id', candidate.id)
+      .or('status.eq.queued,status.eq.retrying') // Verify still available
+      .or(`lease_expires_at.lt.${now},lease_owner.is.null`) // Verify still unleased
+      .select()
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') return null; // Lost the race
+      throw error;
+    }
+    
     return data;
   }
 };

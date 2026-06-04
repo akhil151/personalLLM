@@ -35,41 +35,52 @@ export const schedulerService = {
 
   /**
    * Scans for due tasks and executes them.
+   * Uses atomic claiming to ensure a task is only started once.
    */
-  async processSchedules() {
+  async processSchedules(workerId: string = 'scheduler-worker') {
     const supabase = createAdminClient();
     const now = new Date().toISOString();
 
-    const { data: dueTasks, error } = await supabase
+    // 1. Claim one due task
+    const { data: task, error } = await supabase
       .from('autonomous_schedules')
-      .select('*')
+      .update({ 
+        status: 'processing',
+        updated_at: now
+      })
       .eq('status', 'active')
-      .lte('next_run_at', now);
+      .lte('next_run_at', now)
+      .select()
+      .limit(1)
+      .single();
 
     if (error) {
-      console.error('Schedule Scan Error:', error);
+      if (error.code !== 'PGRST116') console.error('Schedule Scan Error:', error);
       return;
     }
 
-    for (const task of dueTasks) {
-      try {
-        console.log(`Executing Scheduled Task: ${task.name}`);
-        
-        // 1. Trigger the workflow
-        await workflowRuntime.startWorkflow(task.user_id, '', task.workflow_type, task.payload);
+    try {
+      console.log(`[SCHEDULER] Executing: ${task.name} (Claimed by ${workerId})`);
+      
+      // 2. Trigger the workflow
+      await workflowRuntime.startWorkflow(task.user_id, '', task.workflow_type, task.payload);
 
-        // 2. Update or complete the schedule
-        if (task.cron_expression) {
-          // Calculate next run based on cron (simplified)
-          const nextRun = new Date(Date.now() + 24 * 60 * 60 * 1000); // Default to +1 day
-          await supabase.from('autonomous_schedules').update({ next_run_at: nextRun.toISOString() }).eq('id', task.id);
-        } else {
-          await supabase.from('autonomous_schedules').update({ status: 'completed' }).eq('id', task.id);
-        }
-
-      } catch (err) {
-        console.error(`Failed to execute scheduled task ${task.id}:`, err);
+      // 3. Update or complete the schedule
+      if (task.cron_expression) {
+        // Calculate next run based on cron (simplified)
+        const nextRun = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); 
+        await supabase.from('autonomous_schedules').update({ 
+          status: 'active',
+          next_run_at: nextRun 
+        }).eq('id', task.id);
+      } else {
+        await supabase.from('autonomous_schedules').update({ status: 'completed' }).eq('id', task.id);
       }
+
+    } catch (err) {
+      console.error(`[SCHEDULER] Failed to execute task ${task.id}:`, err);
+      // Revert to active on failure so it can be retried
+      await supabase.from('autonomous_schedules').update({ status: 'active' }).eq('id', task.id);
     }
   }
 };
