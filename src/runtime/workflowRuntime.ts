@@ -55,7 +55,7 @@ export const workflowRuntime = {
     const { error: snapError } = await supabase
       .from('workflow_snapshots')
       .insert([{
-        workflow_run_id: context.runId,
+        run_id: context.runId,
         state_data: context.variables,
         step_index: context.stepIndex
       }]);
@@ -89,7 +89,7 @@ export const workflowRuntime = {
       supabase
         .from('workflow_snapshots')
         .select('*')
-        .eq('workflow_run_id', runId)
+        .eq('run_id', runId)
         .order('step_index', { ascending: false })
         .limit(1)
         .single(),

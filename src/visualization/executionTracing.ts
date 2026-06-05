@@ -18,7 +18,7 @@ export const executionTracing = {
     const { data: events, error } = await supabase
       .from('workflow_events')
       .select('*')
-      .eq('workflow_run_id', runId)
+      .eq('run_id', runId)
       .order('created_at', { ascending: true });
 
     if (error) throw error;
@@ -26,7 +26,7 @@ export const executionTracing = {
     const { data: snapshots } = await supabase
       .from('workflow_snapshots')
       .select('*')
-      .eq('workflow_run_id', runId)
+      .eq('run_id', runId)
       .order('step_index', { ascending: true });
 
     return {

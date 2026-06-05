@@ -1,5 +1,5 @@
 import { IAgent, AgentInput, AgentOutput, agentRegistry } from '@/orchestrator/agentRegistry';
-import { openaiService } from '@/services/openaiService';
+import { llmService } from '@/services/llmService';
 import { orchestratorService } from '@/orchestrator/orchestratorService';
 import { createAdminClient } from '@/lib/supabase-admin';
 
@@ -25,19 +25,27 @@ export class PlannerAgent implements IAgent {
 
     const systemPrompt = `You are a Senior AI Planner. Your job is to take a high-level user goal and break it down into a sequence of logical tasks.
     Each task should be clear, actionable, and assigned to the most appropriate agent:
-    - 'executor': for general tool usage (database, system tasks).
-    - 'memory': for searching past conversations or retrieving context.
+    - 'executor': for general system tasks or final data processing.
+    - 'memory': for searching past conversations, retrieving long-term context, or knowledge base lookups.
     - 'browser': for any task that requires web navigation, searching the internet, or interacting with websites.
+    - 'research': for deep-dive information gathering, synthesis of multiple sources, and complex report generation.
+    - 'critic': for reviewing plans, checking outputs for accuracy, safety audits, or quality assurance.
     
+    Task Decomposition Rules:
+    1. If the goal requires finding new information on the web, use 'research' for the high-level inquiry and 'browser' for specific site visits.
+    2. If the goal requires reviewing or validating work, always include a final 'critic' task.
+    3. Use 'memory' first if the goal might rely on previous user interactions.
+    4. Sequence tasks logically (e.g., research -> synthesize -> review).
+
     Return a JSON object with the following structure:
     {
       "tasks": [
-        { "title": "...", "description": "...", "priority": 1, "assigned_agent": "executor|memory|browser" }
+        { "title": "...", "description": "...", "priority": 1, "assigned_agent": "executor|memory|browser|research|critic" }
       ]
     }`;
 
     try {
-      const result = await openaiService.getStructuredOutput([
+      const result = await llmService.getStructuredOutput([
         { role: 'system', content: systemPrompt },
         { role: 'user', content: `Goal: ${goal}` }
       ], {});

@@ -42,7 +42,7 @@ export const observabilityService = {
     console.log(`[OBSERVABILITY] Recovery triggered for ${runId}: ${details}`);
     const supabase = createAdminClient();
     await supabase.from('safety_logs').insert({
-      workflow_run_id: runId,
+      run_id: runId,
       violation_type: 'recovery_triggered',
       details,
       action_taken: 'resumed'

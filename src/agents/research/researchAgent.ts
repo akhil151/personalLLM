@@ -1,5 +1,5 @@
 import { IAgent, AgentInput, AgentOutput, agentRegistry } from '@/orchestrator/agentRegistry';
-import { openaiService } from '@/services/openaiService';
+import { llmService } from '@/services/llmService';
 import { orchestratorService } from '@/orchestrator/orchestratorService';
 
 /**
@@ -33,7 +33,7 @@ export class ResearchAgent implements IAgent {
     }`;
 
     try {
-      const result = await openaiService.getStructuredOutput([
+      const result = await llmService.getStructuredOutput([
         { role: 'system', content: systemPrompt },
         { role: 'user', content: `Topic: ${topic}\nContext: ${JSON.stringify(context)}` }
       ], {});

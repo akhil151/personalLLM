@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase-server';
 import { dbService } from '@/services/dbService';
 import { memoryService } from '@/services/memory/memoryService';
-import { openaiService } from '@/services/openaiService';
+import { llmService } from '@/services/llmService';
 import { promptService } from '@/services/promptService';
 import { observabilityService } from '@/services/observability/observabilityService';
 import { executionPipeline } from '@/orchestrator/executionPipeline';
@@ -49,7 +49,7 @@ export async function POST(req: Request) {
     Provide a final, helpful response to the user summarizing the outcome and any actions taken.`;
 
     const result_stream = await streamText({
-      model: openaiService.getProvider(),
+      model: llmService.getProvider('chat'),
       system: promptService.getSystemPrompt(),
       messages: [{ role: 'user', content: summaryPrompt }],
       onFinish: async ({ text }) => {

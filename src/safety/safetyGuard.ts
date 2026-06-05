@@ -39,7 +39,7 @@ export const safetyGuard = {
       .from('safety_logs')
       .insert([{
         user_id: userId,
-        workflow_run_id: runId,
+        run_id: runId,
         violation_type: type,
         details,
         action_taken: 'blocked'

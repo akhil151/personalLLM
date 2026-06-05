@@ -47,7 +47,7 @@ class EventBus {
     await supabase
       .from('workflow_events')
       .insert([{
-        workflow_run_id: runId,
+        run_id: runId,
         event_type: type,
         payload: payload
       }]);

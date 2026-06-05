@@ -1,4 +1,4 @@
-import { openaiService } from '@/services/openaiService';
+import { llmService } from '@/services/llmService';
 
 /**
  * ReflectionEngine implements the "Self-Correction" loop for agents.
@@ -32,7 +32,7 @@ export const reflectionEngine = {
     const userPrompt = `GOAL: ${goal}\nTASK: ${task}\nRESULT: ${JSON.stringify(result)}`;
 
     try {
-      const evaluation = await openaiService.getStructuredOutput([
+      const evaluation = await llmService.getStructuredOutput([
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt }
       ], {});

@@ -5,7 +5,7 @@ export async function getTestUser() {
     return '00000000-0000-0000-0000-000000000000';
   }
   const supabase = createAdminClient();
-  const { data: users, error } = await supabase.from('auth.users' as any).select('id').limit(1);
+  const { data: { users }, error } = await supabase.auth.admin.listUsers();
   
   if (error || !users || users.length === 0) {
     // If no users, try to find a profile or just use a placeholder if we can't create one

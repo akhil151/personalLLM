@@ -75,7 +75,7 @@ export const workerRuntime = {
       }).eq('id', job.id);
 
       if (job.job_type === 'task_execution') {
-        await eventBus.publish(job.workflow_run_id, 'JOB_FAILED', { error: err.message });
+        await eventBus.publish(job.run_id, 'JOB_FAILED', { error: err.message });
       }
     }
   },

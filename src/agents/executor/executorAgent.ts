@@ -1,5 +1,5 @@
 import { IAgent, AgentInput, AgentOutput, agentRegistry } from '@/orchestrator/agentRegistry';
-import { openaiService } from '@/services/openaiService';
+import { llmService } from '@/services/llmService';
 import { orchestratorService } from '@/orchestrator/orchestratorService';
 import { tools, toolHandlers } from '@/services/tools/toolService';
 import { mcpService } from '@/mcp/mcpService';
@@ -49,7 +49,7 @@ export class ExecutorAgent implements IAgent {
     Return JSON: { "tool": "name", "args": {}, "reasoning": "..." }`;
 
     try {
-      const decision = await openaiService.getStructuredOutput([
+      const decision = await llmService.getStructuredOutput([
         { role: 'system', content: systemPrompt },
         { role: 'user', content: `Execute: ${task.title}` }
       ], {});

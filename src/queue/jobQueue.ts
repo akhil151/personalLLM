@@ -21,7 +21,7 @@ export const jobQueue = {
       .from('background_jobs')
       .insert([{
         user_id: userId,
-        workflow_run_id: runId,
+        run_id: runId,
         job_type: type,
         payload: payload,
         status: 'queued'

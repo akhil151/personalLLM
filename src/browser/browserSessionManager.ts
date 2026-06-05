@@ -17,7 +17,7 @@ export const browserSessionManager = {
       .from('browser_sessions')
       .insert([{
         user_id: userId,
-        workflow_run_id: runId,
+        run_id: runId,
         status: 'active'
       }])
       .select()
@@ -44,7 +44,7 @@ export const browserSessionManager = {
       .from('browser_sessions')
       .select('*')
       .eq('user_id', userId)
-      .eq('workflow_run_id', runId)
+      .eq('run_id', runId)
       .eq('status', 'active')
       .single();
     

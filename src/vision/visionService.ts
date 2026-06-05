@@ -1,4 +1,4 @@
-import { openaiService } from '@/services/openaiService';
+import { llmService } from '@/services/llmService';
 
 /**
  * VisionService provides the "Multimodal Perception" layer.
@@ -34,7 +34,7 @@ export const visionService = {
     }`;
 
     try {
-      const perception = await openaiService.analyzeImage(
+      const perception = await llmService.analyzeImage(
         imageUrl,
         systemPrompt,
         `Analyze the current browser state for goal: ${goal}`
