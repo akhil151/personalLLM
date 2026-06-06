@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase-admin';
 import { agentRegistry, AgentRole } from './agentRegistry';
 import { observabilityService } from '@/services/observability/observabilityService';
+import { eventBus } from '@/events/eventBus';
 
 /**
  * OrchestratorService is the central brain of the multi-agent system.

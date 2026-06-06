@@ -19,6 +19,11 @@ export class PlannerAgent implements IAgent {
 
   async execute(input: AgentInput): Promise<AgentOutput> {
     const { runId, data } = input;
+    
+    if (!data || !data.goal) {
+      throw new Error('Planner Agent: Missing "goal" in input data.');
+    }
+    
     const { goal } = data;
 
     await orchestratorService.logStep(runId, this.name, 'thought', `Decomposing goal: "${goal}" into tasks.`);

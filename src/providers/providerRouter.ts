@@ -1,4 +1,7 @@
 
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env.local' });
+
 import { createOpenAI } from '@ai-sdk/openai';
 import { LLMProvider, LLMMessage, LLMResponse } from './LLMProvider';
 import { OpenAIProvider } from './OpenAIProvider';
@@ -54,9 +57,9 @@ export class ProviderRouter {
     switch (task) {
       case 'simple': return { provider: 'openrouter', model: 'anthropic/claude-3-haiku' };
       case 'chat': return { provider: 'openrouter', model: 'anthropic/claude-3-haiku' };
-      case 'planning': return { provider: 'openrouter', model: 'anthropic/claude-3.5-sonnet' };
-      case 'research': return { provider: 'openrouter', model: 'anthropic/claude-3.5-sonnet' };
-      case 'vision': return { provider: 'openrouter', model: 'anthropic/claude-3.5-sonnet' };
+      case 'planning': return { provider: 'openrouter', model: 'anthropic/claude-3-haiku' };
+      case 'research': return { provider: 'openrouter', model: 'anthropic/claude-3-haiku' };
+      case 'vision': return { provider: 'openrouter', model: 'google/gemini-flash-1.5' };
       default: return { provider: 'openrouter', model: 'anthropic/claude-3-haiku' };
     }
   }

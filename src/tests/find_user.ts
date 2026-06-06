@@ -1,3 +1,5 @@
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env.local' });
 import { createAdminClient } from '../lib/supabase-admin';
 
 // FALLBACK FOR TESTING PURPOSES

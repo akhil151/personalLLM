@@ -56,8 +56,9 @@ export class OpenRouterProvider implements LLMProvider {
         'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`
       },
       body: JSON.stringify({
-        model: 'openai/text-embedding-3-small',
+        model: 'openai/text-embedding-3-large',
         input: text,
+        dimensions: 3072
       })
     });
 
