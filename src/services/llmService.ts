@@ -1,6 +1,15 @@
 
 import { providerRouter, TaskType } from '../providers/providerRouter';
 import { routingService } from './analytics/routingService';
+import { safeJsonParser } from '../lib/safeJsonParser';
+import { ZodSchema, z } from 'zod';
+
+/**
+ * Utility to check if an object is a Zod schema.
+ */
+function isZodSchema(schema: any): schema is ZodSchema {
+  return schema && typeof schema.safeParse === 'function';
+}
 
 /**
  * llmService handles direct communication with the LLM via provider abstraction.
@@ -26,13 +35,18 @@ export const llmService = {
   /**
    * Generates a structured JSON output with provider routing and usage tracking.
    */
-  async getStructuredOutput(
+  async getStructuredOutput<T = any>(
     messages: any[], 
-    jsonSchema: any, 
+    jsonSchema?: ZodSchema<T>, 
     userId: string = 'system', 
     runId: string = 'none',
     task: TaskType = 'planning'
-  ) {
+  ): Promise<T> {
+    // ENFORCE ZOD SCHEMA
+    if (jsonSchema && !isZodSchema(jsonSchema)) {
+      throw new Error(`[LLM_SERVICE] Invalid schema passed to getStructuredOutput. Expected ZodSchema, got ${typeof jsonSchema}.`);
+    }
+
     const result = await providerRouter.generate(task, messages, {
       response_format: { type: 'json_object' }
     });
@@ -48,7 +62,18 @@ export const llmService = {
       );
     }
     
-    return JSON.parse(result.content);
+    const parseResult = safeJsonParser.parse<T>(result.content, jsonSchema);
+    
+    if (!parseResult.success) {
+      console.error(`[LLM_SERVICE] Structured output parsing failed: ${parseResult.error}`);
+      throw new Error(parseResult.error);
+    }
+
+    if (parseResult.recovered) {
+      console.log(`[LLM_SERVICE] Successfully recovered malformed JSON from ${task} task.`);
+    }
+
+    return parseResult.data!;
   },
 
   /**

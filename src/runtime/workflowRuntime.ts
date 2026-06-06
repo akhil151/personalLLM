@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase-admin';
 import { WorkflowStateMachine, WorkflowContext } from './workflowStateMachine';
+import { eventBus } from '@/events/eventBus';
 
 /**
  * WorkflowRuntime is the engine that executes durable workflows.
@@ -30,6 +31,13 @@ export const workflowRuntime = {
       .single();
 
     if (error) throw error;
+
+    // 1.2 Publish Event
+    await eventBus.publish(run.id, 'WORKFLOW_STARTED', { 
+      userId, 
+      conversationId, 
+      goal: initialVars.goal 
+    });
 
     const context: WorkflowContext = {
       runId: run.id,
@@ -75,6 +83,11 @@ export const workflowRuntime = {
       .eq('id', context.runId);
 
     if (runError) throw new Error(`Failed to update run status: ${runError.message}`);
+
+    // 3. Publish Completion Event if terminal
+    if (sm.getState() === 'completed') {
+      await eventBus.publish(context.runId, 'WORKFLOW_COMPLETED', { runId: context.runId });
+    }
   },
 
   /**

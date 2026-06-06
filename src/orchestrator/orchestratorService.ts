@@ -2,6 +2,8 @@ import { createAdminClient } from '@/lib/supabase-admin';
 import { agentRegistry, AgentRole } from './agentRegistry';
 import { observabilityService } from '@/services/observability/observabilityService';
 import { eventBus } from '@/events/eventBus';
+import { projectStateService } from '@/services/projectStateService';
+import { goalManagerService } from '@/services/goalManagerService';
 
 /**
  * OrchestratorService is the central brain of the multi-agent system.
@@ -32,6 +34,33 @@ export const orchestratorService = {
       .single();
 
     if (error) throw error;
+
+    // 1.5 PHASE Z.3.5: Ensure Project and Goal exist for this run
+    try {
+      const activeProject = await projectStateService.getActiveProject();
+      if (!activeProject) {
+        console.log(`[ORCHESTRATOR] No active project found. Creating project for goal: ${goal}`);
+        const newProject = await supabase.from('jarvis_projects').insert([{
+          user_id: userId,
+          name: goal.slice(0, 50),
+          description: goal,
+          status: 'active',
+          progress: 0
+        }]).select().single();
+        
+        if (newProject.data) {
+          await supabase.from('jarvis_goals').insert([{
+            user_id: userId,
+            title: goal,
+            description: `Primary goal for project ${newProject.data.name}`,
+            status: 'active',
+            progress: 0
+          }]);
+        }
+      }
+    } catch (err) {
+      console.error('[ORCHESTRATOR] Failed to bootstrap project/goal:', err);
+    }
 
     // 2. Initial Step: Log the goal
     await this.logStep(run.id, 'orchestrator', 'thought', `Starting run for goal: ${goal}`);

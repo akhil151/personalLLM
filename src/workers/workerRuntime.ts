@@ -28,6 +28,7 @@ export const workerRuntime = {
           await this.processJob(job);
           await observabilityService.logWorkerEvent('job_completed', job.id);
         } else {
+          // No job found, wait 3s
           await new Promise(resolve => setTimeout(resolve, 3000));
         }
       } catch (err) {

@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase-admin';
 
 export type EventType = 
+  | 'WORKFLOW_STARTED'
   | 'TASK_CREATED' 
   | 'PLAN_GENERATED' 
   | 'TOOL_EXECUTED' 

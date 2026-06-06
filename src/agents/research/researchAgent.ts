@@ -1,6 +1,18 @@
 import { IAgent, AgentInput, AgentOutput, agentRegistry } from '@/orchestrator/agentRegistry';
 import { llmService } from '@/services/llmService';
 import { orchestratorService } from '@/orchestrator/orchestratorService';
+import { z } from 'zod';
+
+const ResearchSchema = z.object({
+  summary: z.string(),
+  findings: z.array(z.object({
+    point: z.string(),
+    source: z.string(),
+    confidence: z.number().min(0).max(1)
+  })),
+  gaps: z.array(z.string()),
+  recommendations: z.array(z.string())
+});
 
 /**
  * ResearchAgent is responsible for deep-dive information gathering.
@@ -36,7 +48,7 @@ export class ResearchAgent implements IAgent {
       const result = await llmService.getStructuredOutput([
         { role: 'system', content: systemPrompt },
         { role: 'user', content: `Topic: ${topic}\nContext: ${JSON.stringify(context)}` }
-      ], {});
+      ], ResearchSchema);
 
       await orchestratorService.logStep(runId, this.name, 'observation', `Research synthesis complete.`);
 

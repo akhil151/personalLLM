@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase-server';
+import { createAdminClient } from '@/lib/supabase-admin';
 
 /**
  * ExecutionTracing provides the data for the Visualization UI.
@@ -13,7 +13,7 @@ export const executionTracing = {
    * Fetches the full event history for a workflow run.
    */
   async getTrace(runId: string) {
-    const supabase = await createClient();
+    const supabase = createAdminClient();
 
     const { data: events, error } = await supabase
       .from('workflow_events')

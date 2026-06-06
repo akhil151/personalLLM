@@ -1,6 +1,7 @@
 import { mcpService } from './src/mcp/mcpService';
 import { openaiService } from './src/services/openaiService';
 import { createAdminClient } from './src/lib/supabase-admin';
+import { z } from 'zod';
 
 async function runAudit() {
   console.log('--- PHASE Y PRODUCTION ACCEPTANCE TEST (PAT) ---');
@@ -24,10 +25,10 @@ async function runAudit() {
     const runId = '00000000-0000-0000-0000-000000000000';
 
     console.log('Testing Medium Complexity (GPT-4o)...');
-    await openaiService.getStructuredOutput([{ role: 'user', content: 'Say hello' }], {}, userId, runId, 'medium');
+    await openaiService.getStructuredOutput([{ role: 'user', content: 'Say hello' }], z.object({ reply: z.string() }), userId, runId, 'medium');
     
     console.log('Testing Low Complexity (GPT-4o-mini)...');
-    await openaiService.getStructuredOutput([{ role: 'user', content: '1+1' }], {}, userId, runId, 'low');
+    await openaiService.getStructuredOutput([{ role: 'user', content: '1+1' }], z.object({ result: z.number() }), userId, runId, 'low');
 
     const supabase = createAdminClient();
     const { data: usage } = await supabase.from('token_usage').select('*').limit(2);

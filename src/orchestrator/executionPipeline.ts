@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase-server';
+import { createAdminClient } from '@/lib/supabase-admin';
 import { workflowRuntime } from '@/runtime/workflowRuntime';
 import { eventBus } from '@/events/eventBus';
 import { orchestratorService } from './orchestratorService';

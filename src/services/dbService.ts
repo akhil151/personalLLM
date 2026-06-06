@@ -1,4 +1,5 @@
 import { jobQueue } from '@/queue/jobQueue';
+import { createAdminClient } from '@/lib/supabase-admin';
 
 /**
  * dbService handles all direct PostgreSQL interactions for conversations and messages.
@@ -10,8 +11,12 @@ export const dbService = {
    */
   async _getSupabase() {
     if (typeof window === 'undefined') {
-      const { createClient } = await import('@/lib/supabase-server');
-      return await createClient();
+      try {
+        const { createClient } = await import('@/lib/supabase-server');
+        return await createClient();
+      } catch (err) {
+        return createAdminClient();
+      }
     } else {
       const { createClient } = await import('@/lib/supabase');
       return createClient();

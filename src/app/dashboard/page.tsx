@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase-server';
 import { redirect } from 'next/navigation';
 import { LogoutButton } from '@/components/dashboard/LogoutButton';
 import { DashboardContent } from '@/components/dashboard/DashboardContent';
+import { userIntelligenceService } from '@/services/userIntelligenceService';
 
 /**
  * Dashboard Page (Server Component).
@@ -21,6 +22,9 @@ export default async function DashboardPage() {
   if (!user) {
     redirect('/login');
   }
+
+  // 3. PHASE Z.3.5: Bootstrap user profile on first dashboard visit
+  await userIntelligenceService.bootstrapProfile(user.id);
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-6 md:p-12">

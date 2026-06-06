@@ -4,6 +4,13 @@ import { orchestratorService } from '@/orchestrator/orchestratorService';
 import { tools, toolHandlers } from '@/services/tools/toolService';
 import { mcpService } from '@/mcp/mcpService';
 import { createAdminClient } from '@/lib/supabase-admin';
+import { z } from 'zod';
+
+const ExecutorSchema = z.object({
+  tool: z.string(),
+  args: z.any(),
+  reasoning: z.string()
+});
 
 /**
  * ExecutorAgent performs the actual work.
@@ -52,7 +59,7 @@ export class ExecutorAgent implements IAgent {
       const decision = await llmService.getStructuredOutput([
         { role: 'system', content: systemPrompt },
         { role: 'user', content: `Execute: ${task.title}` }
-      ], {});
+      ], ExecutorSchema);
 
       await orchestratorService.logStep(runId, this.name, 'thought', decision.reasoning, decision.tool, decision.args);
 

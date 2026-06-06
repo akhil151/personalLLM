@@ -1,3 +1,12 @@
+import { createAdminClient } from '@/lib/supabase-admin';
+import { memoryService } from '../memory/memoryService';
+import { llmService } from '../llmService';
+import { userIntelligenceService } from '../userIntelligenceService';
+import { behaviorAnalyzer } from '../behaviorAnalyzer';
+import { goalManagerService } from '../goalManagerService';
+import { jarvisReflectionService } from '../jarvisReflectionService';
+import { z } from 'zod';
+
 /**
  * ToolRegistry defines the available functions the AI can call.
  * 
@@ -109,19 +118,70 @@ export const toolHandlers: Record<string, (args: any) => Promise<any>> = {
   },
   search_memories: async (args) => {
     console.log('EXECUTING TOOL: search_memories', args);
-    return { success: true, data: [] }; // Placeholder for actual retrieval
+    const { query, user_id } = args;
+    if (!user_id) return { success: false, error: 'user_id is required' };
+    
+    const memories = await memoryService.searchSimilarMemories(query, user_id);
+    return { success: true, data: memories };
   },
   summarize_conversation: async (args) => {
     console.log('EXECUTING TOOL: summarize_conversation', args);
-    return { success: true, summary: "This is a placeholder summary." };
+    const { conversation_id } = args;
+    const supabase = createAdminClient();
+    
+    const { data: messages, error } = await supabase
+      .from('messages')
+      .select('content, role')
+      .eq('conversation_id', conversation_id)
+      .order('created_at', { ascending: true });
+
+    if (error || !messages) return { success: false, error: error?.message || 'No messages found' };
+
+    const prompt = `Summarize the following conversation in 2-3 concise sentences:\n\n${messages.map((m: any) => `${m.role}: ${m.content}`).join('\n')}`;
+    const summary = await llmService.getStructuredOutput([
+      { role: 'system', content: 'You are a concise summarizer.' },
+      { role: 'user', content: prompt }
+    ], z.object({ summary: z.string() }));
+
+    return { success: true, summary: summary.summary };
   },
   fetch_user_data: async (args) => {
     console.log('EXECUTING TOOL: fetch_user_data', args);
-    return { success: true, profile: { name: "User", preferences: ["ML", "AI"] } };
+    const { user_id } = args;
+    if (!user_id) return { success: false, error: 'user_id is required' };
+
+    const [profile, behavior] = await Promise.all([
+      userIntelligenceService.getUserProfile(user_id),
+      behaviorAnalyzer.getBehaviorProfile(user_id)
+    ]);
+
+    return { success: true, profile, behavior };
   },
   generate_learning_plan: async (args) => {
     console.log('EXECUTING TOOL: generate_learning_plan', args);
-    return { success: true, plan: [`Learn ${args.topic} basics`, `Deep dive into ${args.topic}`] };
+    const { topic, user_id } = args;
+    if (!user_id) return { success: false, error: 'user_id is required' };
+
+    const [profile, goals, reflections] = await Promise.all([
+      userIntelligenceService.getUserProfile(user_id),
+      goalManagerService.getGoals(), // In a real app, pass user_id if needed, but service uses auth
+      jarvisReflectionService.getLatestReflections(5)
+    ]);
+
+    const context = { profile, goals, reflections, topic };
+    const systemPrompt = `You are Jarvis, a Learning Architect. 
+    Generate a personalized learning plan for the topic: "${topic}".
+    Use the user's current focus, career goals, and past reflections to tailor the roadmap.`;
+
+    const plan = await llmService.getStructuredOutput([
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: `Context: ${JSON.stringify(context)}` }
+    ], z.object({
+      plan: z.array(z.string()),
+      reasoning: z.string()
+    }));
+
+    return { success: true, ...plan };
   },
   schedule_task: async (args) => {
     console.log('EXECUTING TOOL: schedule_task', args);

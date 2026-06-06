@@ -1,4 +1,12 @@
 import { llmService } from '@/services/llmService';
+import { z } from 'zod';
+
+const ReflectionSchema = z.object({
+  success: z.boolean(),
+  critique: z.string(),
+  correction_plan: z.string().optional(),
+  confidence_score: z.number()
+});
 
 /**
  * ReflectionEngine implements the "Self-Correction" loop for agents.
@@ -35,7 +43,7 @@ export const reflectionEngine = {
       const evaluation = await llmService.getStructuredOutput([
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt }
-      ], {});
+      ], ReflectionSchema);
 
       return evaluation;
 

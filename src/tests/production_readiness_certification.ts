@@ -5,6 +5,7 @@ import { mcpService } from '../mcp/mcpService';
 import { voiceService } from '../voice/voiceService';
 import { openaiService } from '../services/openaiService';
 import { executionRecovery } from '../runtime/executionRecovery';
+import { z } from 'zod';
 
 // TYPES & INTERFACES
 interface AuditResult {
@@ -47,7 +48,7 @@ export class ProductionReadinessAuditor {
         } else {
           await openaiService.getStructuredOutput(
             [{ role: 'user', content: `Load test query from user ${id}` }],
-            { type: 'object', properties: { test: { type: 'string' } } },
+            z.object({ test: z.string() }),
             `user_${id}`,
             'load_test_run',
             'low'
@@ -228,7 +229,7 @@ export class ProductionReadinessAuditor {
       
       // Simulate partial execution steps
       await mcpService.listTools();
-      await openaiService.getStructuredOutput([{ role: 'user', content: goal }], {}, userId, sm.getContext().runId, 'high');
+      await openaiService.getStructuredOutput([{ role: 'user', content: goal }], z.object({ analysis: z.string() }), userId, sm.getContext().runId, 'high');
       
       console.log('Journey verification: All subsystems responded.');
       return { status: 'PASS', score: 10, details: 'Full cycle simulation successful' };

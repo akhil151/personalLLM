@@ -1,6 +1,14 @@
 import { IAgent, AgentInput, AgentOutput, agentRegistry } from '@/orchestrator/agentRegistry';
 import { llmService } from '@/services/llmService';
 import { orchestratorService } from '@/orchestrator/orchestratorService';
+import { z } from 'zod';
+
+const CriticSchema = z.object({
+  verdict: z.enum(['pass', 'fail', 'needs_revision']),
+  score: z.number().min(0).max(100),
+  concerns: z.array(z.string()),
+  suggestions: z.array(z.string())
+});
 
 /**
  * CriticAgent provides quality assurance and safety checks.
@@ -34,7 +42,7 @@ export class CriticAgent implements IAgent {
       const result = await llmService.getStructuredOutput([
         { role: 'system', content: systemPrompt },
         { role: 'user', content: `Action: ${JSON.stringify(action_to_review)}\nOutput: ${JSON.stringify(output_to_review)}` }
-      ], {});
+      ], CriticSchema);
 
       await orchestratorService.logStep(runId, this.name, 'observation', `Critic review complete: ${result.verdict}`);
 

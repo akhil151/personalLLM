@@ -1,6 +1,10 @@
 import { eventBus, WorkflowEvent } from './eventBus';
 import { jobQueue } from '@/queue/jobQueue';
 import { createAdminClient } from '@/lib/supabase-admin';
+import { jarvisReflectionService } from '@/services/jarvisReflectionService';
+import { userMemoryExtractor } from '@/services/userMemoryExtractor';
+import { jarvisRecommendationService } from '@/services/jarvisRecommendationService';
+import { behaviorAnalyzer } from '@/services/behaviorAnalyzer';
 
 /**
  * EventDispatcher coordinates the flow of events across the system.
@@ -52,7 +56,55 @@ export const eventDispatcher = {
 
     // 4. Handle workflow completion
     eventBus.subscribe('WORKFLOW_COMPLETED', async (event: WorkflowEvent) => {
-      console.log(`[ORCHESTRATION] Workflow ${event.runId} finished successfully.`);
+      const { runId } = event.payload;
+      console.log(`[ORCHESTRATION] Workflow ${runId} finished. Activating Reflection & Learning...`);
+
+      try {
+        const supabase = createAdminClient();
+        const { data: run } = await supabase
+          .from('agent_runs')
+          .select('*')
+          .eq('id', runId)
+          .single();
+
+        if (run) {
+          // 1. Generate & Store Reflection
+          console.log(`[LEARNING] Generating reflection for run ${runId}...`);
+          const reflection = await jarvisReflectionService.generateReflection(runId);
+          
+          if (reflection) {
+            // 2. Update User Profile (Memory Extraction)
+            console.log(`[LEARNING] Extracting memories for user ${run.user_id}...`);
+            await userMemoryExtractor.extractAndStoreProfile(run.user_id);
+
+            // 3. Update Goals (Mark as completed if run goal was achieved)
+            console.log(`[LEARNING] Updating goals...`);
+            const { data: goals } = await supabase
+              .from('jarvis_goals')
+              .select('*')
+              .eq('user_id', run.user_id)
+              .eq('status', 'active');
+            
+            if (goals) {
+              for (const goal of goals) {
+                if (run.goal.toLowerCase().includes(goal.title.toLowerCase())) {
+                  await supabase.from('jarvis_goals').update({ status: 'completed', progress: 100 }).eq('id', goal.id);
+                }
+              }
+            }
+
+            // 4. Update Behavior Profile
+            console.log(`[LEARNING] Analyzing behavioral patterns...`);
+            await behaviorAnalyzer.analyzeBehavior(run.user_id);
+
+            // 5. Trigger Recommendation Refresh
+            console.log(`[LEARNING] Refreshing recommendations...`);
+            await jarvisRecommendationService.getRecommendations();
+          }
+        }
+      } catch (err) {
+        console.error('[LEARNING] Activation failed:', err);
+      }
     });
   },
 

@@ -2,6 +2,17 @@ import { IAgent, AgentInput, AgentOutput, agentRegistry } from '@/orchestrator/a
 import { llmService } from '@/services/llmService';
 import { orchestratorService } from '@/orchestrator/orchestratorService';
 import { createAdminClient } from '@/lib/supabase-admin';
+import { z } from 'zod';
+import { eventBus } from '@/events/eventBus';
+
+const PlannerSchema = z.object({
+  tasks: z.array(z.object({
+    title: z.string(),
+    description: z.string(),
+    priority: z.number(),
+    assigned_agent: z.enum(['executor', 'memory', 'browser', 'research', 'critic'])
+  }))
+});
 
 /**
  * PlannerAgent is responsible for task decomposition.
@@ -53,7 +64,23 @@ export class PlannerAgent implements IAgent {
       const result = await llmService.getStructuredOutput([
         { role: 'system', content: systemPrompt },
         { role: 'user', content: `Goal: ${goal}` }
-      ], {});
+      ], PlannerSchema);
+
+      // PHASE Z.3.5: Enforce Critic Agent review for high-complexity tasks
+      const needsCritic = goal.toLowerCase().includes('research') || 
+                          goal.toLowerCase().includes('report') || 
+                          goal.toLowerCase().includes('code') || 
+                          result.tasks.length > 3;
+
+      if (needsCritic && !result.tasks.some((t: any) => t.assigned_agent === 'critic')) {
+        console.log(`[PLANNER] High complexity detected. Injecting Critic Review task.`);
+        result.tasks.push({
+          title: "Quality Assurance & Accuracy Review",
+          description: "Review all gathered information and generated outputs for accuracy, completeness, and safety.",
+          priority: result.tasks.length + 1,
+          assigned_agent: "critic"
+        });
+      }
 
       // Save tasks to DB
       const supabase = createAdminClient();

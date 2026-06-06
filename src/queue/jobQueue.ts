@@ -44,11 +44,14 @@ export const jobQueue = {
     const leaseTime = new Date(Date.now() + 1000 * 60 * 5).toISOString(); // 5 min lease
 
     // 1. Find a candidate job
+    // We use a small buffer (5s) to account for clock skew
+    const bufferNow = new Date(Date.now() + 5000).toISOString();
+
     const { data: candidate, error: findError } = await supabase
       .from('background_jobs')
       .select('id')
-      .or('status.eq.queued,status.eq.retrying')
-      .lt('next_run_at', now)
+      .in('status', ['queued', 'retrying'])
+      .lt('next_run_at', bufferNow)
       .or(`lease_expires_at.lt.${now},lease_owner.is.null`)
       .order('created_at', { ascending: true })
       .limit(1)
