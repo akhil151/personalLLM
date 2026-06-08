@@ -13,6 +13,13 @@ export type TaskType = 'simple' | 'chat' | 'planning' | 'research' | 'vision';
 export class ProviderRouter {
   private providers: LLMProvider[];
   private fallbackOrder: string[] = ['gemini', 'openrouter'];
+  
+  // PHASE Z.4.1.5: Provider Health Tracking
+  private providerHealth: Map<string, { 
+    status: 'available' | 'cooldown', 
+    cooldownUntil: number,
+    consecutiveFailures: number 
+  }> = new Map();
 
   constructor() {
     this.providers = [
@@ -20,33 +27,81 @@ export class ProviderRouter {
       new GeminiProvider(),
       new OpenRouterProvider(),
     ];
+    
+    // Initialize health
+    this.providers.forEach(p => {
+      this.providerHealth.set(p.name, { status: 'available', cooldownUntil: 0, consecutiveFailures: 0 });
+    });
+  }
+
+  private isAvailable(name: string): boolean {
+    const health = this.providerHealth.get(name);
+    if (!health) return true;
+    if (health.status === 'cooldown' && Date.now() > health.cooldownUntil) {
+      health.status = 'available';
+      health.consecutiveFailures = 0;
+      return true;
+    }
+    return health.status === 'available';
+  }
+
+  private markFailure(name: string, error: any) {
+    const health = this.providerHealth.get(name);
+    if (!health) return;
+
+    health.consecutiveFailures++;
+    
+    // Check for rate limit or quota errors
+    const isRateLimit = error.message?.toLowerCase().includes('quota') || 
+                        error.message?.toLowerCase().includes('rate limit') || 
+                        error.message?.toLowerCase().includes('429') ||
+                        error.message?.toLowerCase().includes('credits');
+
+    if (isRateLimit || health.consecutiveFailures >= 3) {
+      const cooldownMins = isRateLimit ? 5 : 2;
+      console.warn(`[ROUTER] Provider ${name} entered cooldown for ${cooldownMins}m due to: ${error.message}`);
+      health.status = 'cooldown';
+      health.cooldownUntil = Date.now() + (1000 * 60 * cooldownMins);
+    }
   }
 
   /**
    * Returns a Vercel AI SDK compatible provider.
    */
   getAIProvider(task: TaskType = 'chat') {
-    const { provider, model } = this.getModelForTask(task);
+    const { provider: providerName, model } = this.getModelForTask(task);
     
-    if (provider === 'openai') {
-      const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY });
-      return openai(model);
+    // If primary is in cooldown, try next in fallback order
+    let finalProvider = providerName;
+    let finalModel = model;
+
+    if (!this.isAvailable(providerName)) {
+      const fallback = this.fallbackOrder.find(p => this.isAvailable(p));
+      if (fallback) {
+        finalProvider = fallback;
+        finalModel = undefined as any; // Use default for fallback
+      }
     }
 
-    if (provider === 'openrouter') {
+    if (finalProvider === 'openai') {
+      const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY });
+      return openai(finalModel);
+    }
+
+    if (finalProvider === 'openrouter') {
       const openrouter = createOpenAI({
         baseURL: 'https://openrouter.ai/api/v1',
         apiKey: process.env.OPENROUTER_API_KEY,
       });
-      return openrouter(model);
+      return openrouter(finalModel || 'anthropic/claude-3-haiku');
     }
 
-    // Default to Gemini if something goes wrong (no OpenAI fallback)
+    // Default to Gemini
     const gemini = createOpenAI({
       baseURL: 'https://generativelanguage.googleapis.com/v1beta',
       apiKey: process.env.GEMINI_API_KEY,
     });
-    return gemini(model);
+    return gemini(finalModel || 'gemini-1.5-flash');
   }
 
   private getProvider(name: string): LLMProvider | undefined {
@@ -70,15 +125,27 @@ export class ProviderRouter {
 
     let lastError: any;
     for (const providerName of order) {
+      if (!this.isAvailable(providerName)) {
+        console.log(`[ROUTER] Skipping ${providerName} (in cooldown)`);
+        continue;
+      }
+
       const provider = this.getProvider(providerName);
       if (!provider) continue;
 
       try {
         console.log(`[ROUTER] Attempting ${providerName} for ${task}...`);
         const model = providerName === primary.provider ? primary.model : undefined;
-        return await provider.generate(messages, { ...options, model });
+        const result = await provider.generate(messages, { ...options, model });
+        
+        // Reset failures on success
+        const health = this.providerHealth.get(providerName);
+        if (health) health.consecutiveFailures = 0;
+        
+        return result;
       } catch (err: any) {
         console.warn(`[ROUTER] ${providerName} failed: ${err.message}`);
+        this.markFailure(providerName, err);
         lastError = err;
       }
     }

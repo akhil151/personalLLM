@@ -35,6 +35,7 @@ export const eventDispatcher = {
     // 3. When a tool is executed, determine the next step
     eventBus.subscribe('TOOL_EXECUTED', async (event: WorkflowEvent) => {
       const { index, total, runId } = event.payload;
+      const { workflowRuntime } = await import('@/runtime/workflowRuntime');
       
       if (index + 1 < total) {
         const supabase = createAdminClient();
@@ -50,7 +51,17 @@ export const eventDispatcher = {
           await this.enqueueTask(runId, nextTask, nextIndex, total);
         }
       } else {
-        await eventBus.publish(runId, 'WORKFLOW_COMPLETED', { runId });
+        // PHASE Z.4.1.5: Transition to COMPLETED state
+        console.log(`[ORCHESTRATION] All tasks complete for ${runId}. Completing workflow.`);
+        try {
+          const sm = await workflowRuntime.recover(runId);
+          sm.transitionTo('completed');
+          await workflowRuntime.checkpoint(sm);
+          // checkpoint() publishes WORKFLOW_COMPLETED
+        } catch (err) {
+          console.error(`[ORCHESTRATION] Failed to complete workflow ${runId}:`, err);
+          await eventBus.publish(runId, 'WORKFLOW_COMPLETED', { runId }); // Fallback
+        }
       }
     });
 

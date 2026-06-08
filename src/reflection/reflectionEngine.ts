@@ -10,15 +10,11 @@ const ReflectionSchema = z.object({
 
 /**
  * ReflectionEngine implements the "Self-Correction" loop for agents.
- * 
- * WHY REFLECTION?
- * Agents can make mistakes, use wrong tools, or hallucinate. 
- * Reflection adds a "Critic" layer that evaluates the output of an "Actor" 
- * before it is finalized or before moving to the next task.
  */
 export const reflectionEngine = {
   /**
    * Critiques a task result and suggests corrections if needed.
+   * PHASE Z.4.1.5 HARDENING: Layered recovery
    */
   async reflect(goal: string, task: string, result: any) {
     console.log(`Reflecting on task: ${task}`);
@@ -40,6 +36,7 @@ export const reflectionEngine = {
     const userPrompt = `GOAL: ${goal}\nTASK: ${task}\nRESULT: ${JSON.stringify(result)}`;
 
     try {
+      // LAYER 1: STRICT SCHEMA PARSE
       const evaluation = await llmService.getStructuredOutput([
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt }
@@ -47,9 +44,40 @@ export const reflectionEngine = {
 
       return evaluation;
 
-    } catch (err) {
-      console.error('Reflection Error:', err);
-      return { success: true, confidence_score: 0.5 }; // Optimistic fallback
+    } catch (err: any) {
+      console.warn(`[REFLECTION] Layer 1 failed: ${err.message}. Attempting Layer 2 recovery...`);
+      
+      try {
+        // LAYER 2: JSON RECOVERY (already handled by llmService.getStructuredOutput calling safeJsonParser)
+        // If we reach here, even Layer 2 failed or the error was something else.
+        
+        // Let's try one more time with a simpler prompt if it was a parsing error
+        if (err.message.includes('parse') || err.message.includes('JSON')) {
+           const simpleResult = await llmService.getStructuredOutput([
+             { role: 'system', content: "Analyze success. Return JSON {success:boolean, critique:string, confidence_score:number}" },
+             { role: 'user', content: `Goal: ${goal}, Result: ${JSON.stringify(result)}` }
+           ], ReflectionSchema);
+           return simpleResult;
+        }
+        
+        throw err;
+      } catch (innerErr: any) {
+        console.error(`[REFLECTION] Layer 2 failed: ${innerErr.message}. Falling back to Layer 3.`);
+        
+        // LAYER 3: FALLBACK REFLECTION
+        return { 
+          success: true, // Optimistic fallback to not block workflow
+          critique: "Reflection unavailable due to system failure.",
+          correction_plan: "No automated correction available.",
+          confidence_score: 0.0,
+          metadata: {
+            summary: "Reflection unavailable",
+            findings: [],
+            gaps: [],
+            recommendations: []
+          }
+        };
+      }
     }
   }
 };

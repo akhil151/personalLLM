@@ -120,9 +120,14 @@ export const dbService = {
   async initiateAutonomousRun(userId: string, input: string, conversationId?: string) {
     const { executionPipeline } = await import('@/orchestrator/executionPipeline');
     
-    // 1. Ensure Conversation
+    // 1. Ensure Conversation (with UUID validation)
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     let activeConversationId = conversationId;
-    if (!activeConversationId) {
+    
+    if (!activeConversationId || !uuidRegex.test(activeConversationId)) {
+      if (activeConversationId) {
+        console.warn(`[DB_SERVICE] Invalid UUID detected for conversationId: ${activeConversationId}. Creating new conversation.`);
+      }
       const conv = await this.createConversation(input.slice(0, 50), userId);
       activeConversationId = conv.id;
     }

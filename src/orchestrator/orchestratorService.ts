@@ -150,11 +150,37 @@ export const orchestratorService = {
    */
   async logVoiceSession(userId: string, conversationId: string, status: 'active' | 'completed' | 'interrupted', config: any = {}) {
     const supabase = createAdminClient();
+    
+    // UUID VALIDATION: Fix for "Voice UUID Bug"
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    let validConversationId = conversationId;
+
+    if (!uuidRegex.test(conversationId)) {
+      console.warn(`[ORCHESTRATOR] Invalid UUID for voice session: ${conversationId}. Fetching/Creating default.`);
+      const { data: conv } = await supabase
+        .from('conversations')
+        .select('id')
+        .eq('user_id', userId)
+        .limit(1)
+        .single();
+      
+      if (conv) {
+        validConversationId = conv.id;
+      } else {
+        const { data: newConv } = await supabase
+          .from('conversations')
+          .insert([{ user_id: userId, title: 'Voice Session Conversation' }])
+          .select()
+          .single();
+        validConversationId = newConv.id;
+      }
+    }
+
     const { data, error } = await supabase
       .from('voice_sessions')
       .insert([{
         user_id: userId,
-        conversation_id: conversationId,
+        conversation_id: validConversationId,
         status,
         session_config: config
       }])

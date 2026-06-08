@@ -66,64 +66,92 @@ export class PlannerAgent implements IAgent {
         { role: 'user', content: `Goal: ${goal}` }
       ], PlannerSchema);
 
-      // PHASE Z.3.5: Enforce Critic Agent review for high-complexity tasks
-      const needsCritic = goal.toLowerCase().includes('research') || 
-                          goal.toLowerCase().includes('report') || 
-                          goal.toLowerCase().includes('code') || 
-                          result.tasks.length > 3;
+      return await this.finalizePlan(runId, goal, result.tasks);
 
-      if (needsCritic && !result.tasks.some((t: any) => t.assigned_agent === 'critic')) {
-        console.log(`[PLANNER] High complexity detected. Injecting Critic Review task.`);
-        result.tasks.push({
-          title: "Quality Assurance & Accuracy Review",
-          description: "Review all gathered information and generated outputs for accuracy, completeness, and safety.",
-          priority: result.tasks.length + 1,
-          assigned_agent: "critic"
+    } catch (error: any) {
+      console.warn(`[PLANNER] LLM Planning failed, entering LEVEL 3 DETERMINISTIC FALLBACK: ${error.message}`);
+      
+      // LEVEL 3 DETERMINISTIC FALLBACK
+      const fallbackTasks = [
+        {
+          title: "Initial Execution",
+          description: `Execute core logic for: ${goal}`,
+          priority: 1,
+          assigned_agent: "executor" as const
+        },
+        {
+          title: "Safety & Quality Review",
+          description: "Final verification of fallback execution.",
+          priority: 2,
+          assigned_agent: "critic" as const
+        }
+      ];
+
+      // If goal specifically mentions research or browser, inject those
+      if (goal.toLowerCase().includes('research') || goal.toLowerCase().includes('find') || goal.toLowerCase().includes('search')) {
+        fallbackTasks.unshift({
+          title: "Emergency Research",
+          description: `Gather critical info for: ${goal}`,
+          priority: 0,
+          assigned_agent: "research" as const
         });
       }
 
-      // Save tasks to DB
-      const supabase = createAdminClient();
-      const tasksToInsert = result.tasks.map((t: any) => ({
-        run_id: runId,
-        title: t.title,
-        description: t.description,
-        priority: t.priority,
-        assigned_agent: t.assigned_agent,
-        status: 'pending'
-      }));
-
-      const { data: savedTasks, error } = await supabase
-        .from('agent_tasks')
-        .insert(tasksToInsert)
-        .select();
-
-      if (error) throw error;
-
-      await orchestratorService.logStep(runId, this.name, 'observation', `Generated ${savedTasks.length} tasks.`);
-
-      // PHASE Y.1 ACTIVATION: Notify Research Agent if needed
-      if (goal.toLowerCase().includes('research')) {
-        await orchestratorService.sendAgentMessage(
-          runId, 
-          this.name, 
-          'Research Agent', 
-          `Starting research tasks for goal: ${goal}`
-        );
-      }
-
-      return {
-        success: true,
-        data: { tasks: savedTasks }
-      };
-
-    } catch (error: any) {
-      return {
-        success: false,
-        data: null,
-        error: error.message
-      };
+      return await this.finalizePlan(runId, goal, fallbackTasks);
     }
+  }
+
+  private async finalizePlan(runId: string, goal: string, tasks: any[]): Promise<AgentOutput> {
+    // PHASE Z.3.5: Enforce Critic Agent review for high-complexity tasks
+    const needsCritic = goal.toLowerCase().includes('research') || 
+                        goal.toLowerCase().includes('report') || 
+                        goal.toLowerCase().includes('code') || 
+                        tasks.length > 3;
+
+    if (needsCritic && !tasks.some((t: any) => t.assigned_agent === 'critic')) {
+      console.log(`[PLANNER] High complexity detected. Injecting Critic Review task.`);
+      tasks.push({
+        title: "Quality Assurance & Accuracy Review",
+        description: "Review all gathered information and generated outputs for accuracy, completeness, and safety.",
+        priority: tasks.length + 1,
+        assigned_agent: "critic"
+      });
+    }
+
+    // Save tasks to DB
+    const supabase = createAdminClient();
+    const tasksToInsert = tasks.map((t: any, i: number) => ({
+      run_id: runId,
+      title: t.title,
+      description: t.description,
+      priority: t.priority !== undefined ? t.priority : i,
+      assigned_agent: t.assigned_agent,
+      status: 'pending'
+    }));
+
+    const { data: savedTasks, error } = await supabase
+      .from('agent_tasks')
+      .insert(tasksToInsert)
+      .select();
+
+    if (error) throw error;
+
+    await orchestratorService.logStep(runId, this.name, 'observation', `Generated ${savedTasks.length} tasks.`);
+
+    // PHASE Y.1 ACTIVATION: Notify Research Agent if needed
+    if (goal.toLowerCase().includes('research')) {
+      await orchestratorService.sendAgentMessage(
+        runId, 
+        this.name, 
+        'Research Agent', 
+        `Starting research tasks for goal: ${goal}`
+      );
+    }
+
+    return {
+      success: true,
+      data: { tasks: savedTasks }
+    };
   }
 }
 

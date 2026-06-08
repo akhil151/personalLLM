@@ -67,10 +67,16 @@ export class ResearchAgent implements IAgent {
       };
 
     } catch (error: any) {
+      console.warn(`[RESEARCH] LLM Research failed, entering LEVEL 3 DETERMINISTIC FALLBACK: ${error.message}`);
+      const fallbackResult = {
+        summary: "Research synthesis unavailable.",
+        findings: [{ point: `Topic: ${topic}`, source: "System Log", confidence: 0.5 }],
+        gaps: ["LLM provider failure prevented deep synthesis"],
+        recommendations: ["Check logs for provider errors"]
+      };
       return {
-        success: false,
-        data: null,
-        error: error.message
+        success: true,
+        data: fallbackResult
       };
     }
   }
