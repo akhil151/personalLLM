@@ -41,6 +41,10 @@ export async function POST(req: Request) {
       finalUserId = conversation.user_id;
     }
 
+    if (!finalUserId) {
+      return NextResponse.json({ error: 'User ID not found' }, { status: 400 });
+    }
+
     const session = await orchestratorService.logVoiceSession(
       finalUserId,
       finalConversationId,

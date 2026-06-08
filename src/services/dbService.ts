@@ -102,10 +102,10 @@ export const dbService = {
     if (error) throw error;
 
     // ASYNC: Enqueue embedding job
-    await jobQueue.enqueue(finalUserId, 'embedding_generation', {
+    await jobQueue.enqueue(finalUserId as string, 'embedding_generation', {
       messageId: data.id,
       conversationId,
-      userId: finalUserId,
+      userId: finalUserId as string,
       content
     });
 
@@ -129,14 +129,14 @@ export const dbService = {
         console.warn(`[DB_SERVICE] Invalid UUID detected for conversationId: ${activeConversationId}. Creating new conversation.`);
       }
       const conv = await this.createConversation(input.slice(0, 50), userId);
-      activeConversationId = conv.id;
+      activeConversationId = conv!.id;
     }
 
     // 2. Create User Message (Triggers embedding job via saveMessage)
-    await this.saveMessage(activeConversationId, 'user', input, userId);
+    await this.saveMessage(activeConversationId!, 'user', input, userId);
 
     // 3. Trigger Execution Pipeline (Creates agent_run and tasks)
-    const result = await executionPipeline.run(userId, activeConversationId, input);
+    const result = await executionPipeline.run(userId, activeConversationId!, input);
     
     return result;
   }

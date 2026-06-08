@@ -3,7 +3,6 @@ import { llmService } from '@/services/llmService';
 import { orchestratorService } from '@/orchestrator/orchestratorService';
 import { createAdminClient } from '@/lib/supabase-admin';
 import { z } from 'zod';
-import { eventBus } from '@/events/eventBus';
 
 const PlannerSchema = z.object({
   tasks: z.array(z.object({
@@ -72,7 +71,7 @@ export class PlannerAgent implements IAgent {
       console.warn(`[PLANNER] LLM Planning failed, entering LEVEL 3 DETERMINISTIC FALLBACK: ${error.message}`);
       
       // LEVEL 3 DETERMINISTIC FALLBACK
-      const fallbackTasks = [
+      const fallbackTasks: any[] = [
         {
           title: "Initial Execution",
           description: `Execute core logic for: ${goal}`,
