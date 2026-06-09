@@ -1,36 +1,40 @@
-import { createAdminClient } from '@/lib/supabase-admin';
+import { createAdminClient } from '../lib/supabase-admin';
+import { llmService } from './llmService';
+import { z } from 'zod';
+
+const MilestoneSchema = z.object({
+  title: z.string(),
+  description: z.string().optional(),
+  order_index: z.number(),
+  target_date: z.string().optional(),
+});
+
+const GoalPlanSchema = z.object({
+  milestones: z.array(MilestoneSchema),
+  priority: z.enum(['low', 'medium', 'high']),
+  estimated_completion_date: z.string().optional(),
+});
 
 /**
- * GoalManagerService handles the creation and tracking of high-level goals.
+ * GoalManagerService handles high-level user intent.
+ * It manages the lifecycle of goals and their conversion into project plans.
  */
 export const goalManagerService = {
-  async _getSupabase() {
-    if (typeof window === 'undefined') {
-      try {
-        const { createClient } = await import('@/lib/supabase-server');
-        return await createClient();
-      } catch (err) {
-        return createAdminClient();
-      }
-    } else {
-      const { createClient } = await import('@/lib/supabase');
-      return createClient();
-    }
-  },
-
-  async createGoal(title: string, description?: string) {
-    const supabase = await this._getSupabase();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('Unauthorized');
-
+  /**
+   * Creates a new user goal.
+   */
+  async createGoal(userId: string, title: string, description?: string, priority: 'low' | 'medium' | 'high' = 'medium') {
+    const supabase = createAdminClient();
+    
     const { data, error } = await supabase
-      .from('jarvis_goals')
-      .insert([{ 
-        user_id: user.id, 
-        title, 
-        description, 
-        status: 'pending', 
-        progress: 0 
+      .from('user_goals')
+      .insert([{
+        user_id: userId,
+        title,
+        description,
+        priority,
+        status: 'active',
+        progress_percentage: 0
       }])
       .select()
       .single();
@@ -39,50 +43,112 @@ export const goalManagerService = {
     return data;
   },
 
-  async updateGoal(goalId: string, updates: Partial<{
-    title: string;
-    description: string;
-    status: 'pending' | 'active' | 'completed' | 'blocked';
-    progress: number;
-  }>) {
-    const supabase = await this._getSupabase();
-    const { data, error } = await supabase
-      .from('jarvis_goals')
-      .update({ ...updates, updated_at: new Date().toISOString() })
+  /**
+   * Generates a milestone plan for a goal using LLM intelligence.
+   */
+  async generateMilestonePlan(goalId: string, userId: string) {
+    const supabase = createAdminClient();
+    
+    // 1. Fetch goal details
+    const { data: goal, error: goalError } = await supabase
+      .from('user_goals')
+      .select('*')
       .eq('id', goalId)
-      .select()
       .single();
 
-    if (error) throw error;
-    return data;
+    if (goalError) throw goalError;
+
+    // 2. Call LLM to break down goal
+    const systemPrompt = `You are a Chief of Staff AI. Break down the following user goal into a logical sequence of milestones.
+Each milestone should be actionable and clear.`;
+    
+    const userPrompt = `Goal: ${goal.title}
+Description: ${goal.description || 'No description provided.'}
+
+Provide a structured plan with milestones, priority, and estimated completion dates.`;
+
+    const plan = await llmService.getStructuredOutput(
+      [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ],
+      GoalPlanSchema,
+      userId,
+      'goal-planning'
+    );
+
+    // 3. Update goal with priority if LLM suggested a better one
+    if (plan.priority !== goal.priority) {
+      await supabase.from('user_goals').update({ priority: plan.priority }).eq('id', goalId);
+    }
+
+    return plan;
   },
 
-  async getGoals() {
-    const supabase = await this._getSupabase();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('Unauthorized');
+  /**
+   * Updates goal progress based on related project/task completion.
+   */
+  async updateProgress(goalId: string) {
+    const supabase = createAdminClient();
+    
+    // Simplified: Calculate progress based on milestones of related projects
+    const { data: projects, error: projectsError } = await supabase
+      .from('user_projects')
+      .select('id')
+      .eq('goal_id', goalId);
 
-    const { data, error } = await supabase
-      .from('jarvis_goals')
+    if (projectsError) throw projectsError;
+
+    let totalMilestones = 0;
+    let completedMilestones = 0;
+
+    for (const project of projects) {
+      const { data: milestones } = await supabase
+        .from('project_milestones')
+        .select('status')
+        .eq('project_id', project.id);
+      
+      if (milestones) {
+        totalMilestones += milestones.length;
+        completedMilestones += milestones.filter(m => m.status === 'completed').length;
+      }
+    }
+
+    const progress = totalMilestones > 0 ? Math.round((completedMilestones / totalMilestones) * 100) : 0;
+
+    await supabase
+      .from('user_goals')
+      .update({ 
+        progress_percentage: progress,
+        status: progress === 100 ? 'completed' : 'active',
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', goalId);
+
+    return progress;
+  },
+
+  /**
+   * Detects stalled goals (no progress for X days).
+   */
+  async detectStalledGoals(userId: string) {
+    const supabase = createAdminClient();
+    const thresholdDate = new Date();
+    thresholdDate.setDate(thresholdDate.getDate() - 7); // 7 days
+
+    const { data: goals, error } = await supabase
+      .from('user_goals')
       .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
+      .eq('user_id', userId)
+      .eq('status', 'active')
+      .lt('updated_at', thresholdDate.toISOString());
 
     if (error) throw error;
-    return data;
-  },
 
-  async getActiveGoal() {
-    const goals = await this.getGoals();
-    if (goals.length === 0) return null;
+    for (const goal of goals) {
+      await supabase.from('user_goals').update({ status: 'stalled' }).eq('id', goal.id);
+    }
 
-    // Priority: 1. active, 2. pending, 3. most recent
-    const active = goals.find((g: any) => g.status === 'active');
-    if (active) return active;
-
-    const pending = goals.find((g: any) => g.status === 'pending');
-    if (pending) return pending;
-
-    return goals[0];
+    return goals;
   }
 };

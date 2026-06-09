@@ -1,88 +1,114 @@
-import { createAdminClient } from '@/lib/supabase-admin';
+import { createAdminClient } from '../lib/supabase-admin';
+import { goalManagerService } from './goalManagerService';
 
 /**
- * ProjectStateService tracks the overall project status and milestones.
+ * ProjectStateService handles the conversion of goals into projects and manages project health.
  */
 export const projectStateService = {
-  async _getSupabase() {
-    if (typeof window === 'undefined') {
-      try {
-        const { createClient } = await import('@/lib/supabase-server');
-        return await createClient();
-      } catch (err) {
-        return createAdminClient();
-      }
-    } else {
-      const { createClient } = await import('@/lib/supabase');
-      return createClient();
-    }
-  },
+  /**
+   * Converts a goal into a project with milestones.
+   */
+  async convertGoalToProject(userId: string, goalId: string) {
+    const supabase = createAdminClient();
+    
+    // 1. Fetch goal
+    const { data: goal, error: goalError } = await supabase
+      .from('user_goals')
+      .select('*')
+      .eq('id', goalId)
+      .single();
 
-  async createProject(name: string, description?: string) {
-    const supabase = await this._getSupabase();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('Unauthorized');
+    if (goalError) throw goalError;
 
-    const { data, error } = await supabase
-      .from('jarvis_projects')
-      .insert([{ 
-        user_id: user.id, 
-        name, 
-        description, 
-        status: 'planning', 
-        progress: 0 
+    // 2. Generate plan
+    const plan = await goalManagerService.generateMilestonePlan(goalId, userId);
+
+    // 3. Create project
+    const { data: project, error: projectError } = await supabase
+      .from('user_projects')
+      .insert([{
+        user_id: userId,
+        goal_id: goalId,
+        title: goal.title,
+        description: goal.description,
+        status: 'active',
+        health_state: 'green'
       }])
       .select()
       .single();
 
-    if (error) throw error;
-    return data;
+    if (projectError) throw projectError;
+
+    // 4. Create milestones
+    const milestones = plan.milestones.map((m, index) => ({
+      project_id: project.id,
+      title: m.title || `Milestone ${index + 1}`,
+      description: m.description || '',
+      order_index: typeof m.order_index === 'number' ? m.order_index : index,
+      status: 'pending',
+      target_date: m.target_date
+    }));
+
+    const { error: milestoneError } = await supabase
+      .from('project_milestones')
+      .insert(milestones);
+
+    if (milestoneError) throw milestoneError;
+
+    return { project, milestones };
   },
 
-  async updateProject(projectId: string, updates: Partial<{
-    name: string;
-    description: string;
-    status: 'planning' | 'active' | 'completed' | 'on_hold';
-    progress: number;
-  }>) {
-    const supabase = await this._getSupabase();
-    const { data, error } = await supabase
-      .from('jarvis_projects')
-      .update({ ...updates, last_activity_at: new Date().toISOString() })
+  /**
+   * Calculates project health based on milestone statuses.
+   */
+  async calculateProjectHealth(projectId: string) {
+    const supabase = createAdminClient();
+    
+    const { data: milestones, error } = await supabase
+      .from('project_milestones')
+      .select('*')
+      .eq('project_id', projectId);
+
+    if (error) throw error;
+
+    const blockedCount = milestones.filter(m => m.status === 'blocked').length;
+    const overdueCount = milestones.filter(m => {
+      if (!m.target_date || m.status === 'completed') return false;
+      return new Date(m.target_date) < new Date();
+    }).length;
+
+    let health: 'green' | 'yellow' | 'red' = 'green';
+
+    if (blockedCount > 0 || overdueCount > 2) {
+      health = 'red';
+    } else if (overdueCount > 0) {
+      health = 'yellow';
+    }
+
+    await supabase
+      .from('user_projects')
+      .update({ 
+        health_state: health,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', projectId);
+
+    return health;
+  },
+
+  /**
+   * Fetches the current state of a project for agent context.
+   */
+  async getProjectState(projectId: string) {
+    const supabase = createAdminClient();
+    
+    const { data: project, error: projectError } = await supabase
+      .from('user_projects')
+      .select('*, milestones:project_milestones(*)')
       .eq('id', projectId)
-      .select()
       .single();
 
-    if (error) throw error;
-    return data;
-  },
-
-  async getProjects() {
-    const supabase = await this._getSupabase();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('Unauthorized');
-
-    const { data, error } = await supabase
-      .from('jarvis_projects')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-    return data;
-  },
-
-  async getActiveProject() {
-    const projects = await this.getProjects();
-    if (projects.length === 0) return null;
-    
-    // Priority: 1. active, 2. planning, 3. most recent
-    const active = projects.find((p: any) => p.status === 'active');
-    if (active) return active;
-    
-    const planning = projects.find((p: any) => p.status === 'planning');
-    if (planning) return planning;
-    
-    return projects[0];
+    if (projectError) throw projectError;
+    return project;
   }
 };

@@ -4,6 +4,7 @@ import { observabilityService } from '@/services/observability/observabilityServ
 import { eventBus } from '@/events/eventBus';
 import { projectStateService } from '@/services/projectStateService';
 import { goalManagerService } from '@/services/goalManagerService';
+import { jarvisRecommendationService } from '@/services/jarvisRecommendationService';
 
 /**
  * OrchestratorService is the central brain of the multi-agent system.
@@ -96,11 +97,30 @@ export const orchestratorService = {
 
   /**
    * Dispatches a task to a specific agent role.
+   * PHASE Z.4.3: Injects Chief of Staff context before execution.
    */
   async dispatch(role: AgentRole, input: any) {
     const agent = agentRegistry.getAgent(role);
     if (!agent) {
       throw new Error(`Agent for role ${role} not found in registry.`);
+    }
+
+    // 1. Context Awareness Injection
+    try {
+      if (input.userId) {
+        const [goals, recommendations] = await Promise.all([
+          createAdminClient().from('user_goals').select('*').eq('user_id', input.userId).eq('status', 'active'),
+          jarvisRecommendationService.getLatestRecommendations(input.userId, 3)
+        ]);
+
+        // Augment input with Chief of Staff intelligence
+        input.cos_context = {
+          active_goals: goals.data || [],
+          recent_recommendations: recommendations || []
+        };
+      }
+    } catch (err) {
+      console.warn('[ORCHESTRATOR] Failed to inject CoS context:', err);
     }
 
     console.log(`Dispatching to ${agent.name}...`);
