@@ -6,9 +6,11 @@ export class OllamaProvider implements LLMProvider {
   name = 'ollama';
   private client: OpenAI;
   private model: string;
+  private embedModel: string;
 
   constructor() {
     this.model = process.env.OLLAMA_MODEL || 'qwen3:8b';
+    this.embedModel = process.env.OLLAMA_EMBED_MODEL || 'nomic-embed-text';
     this.client = new OpenAI({
       baseURL: `${process.env.OLLAMA_BASE_URL || 'http://localhost:11434'}/v1`,
       apiKey: 'ollama', // Ollama doesn't need an API key but the library might require one
@@ -21,11 +23,11 @@ export class OllamaProvider implements LLMProvider {
 
     try {
       // We use streaming even for generate to capture firstTokenTime
-      const stream = await this.client.chat.completions.create({
+      const stream: any = await this.client.chat.completions.create({
         model: options?.model || this.model,
         messages,
-        stream: true,
         ...options,
+        stream: true,
       });
 
       let content = '';
@@ -74,17 +76,17 @@ totalMs: ${totalMs}`);
     const requestStart = Date.now();
     let firstTokenTime = 0;
 
-    const stream = await this.client.chat.completions.create({
+    const stream: any = await this.client.chat.completions.create({
       model: options?.model || this.model,
       messages,
-      stream: true,
       ...options,
+      stream: true,
     });
 
     for await (const chunk of stream) {
       if (!firstTokenTime) {
         firstTokenTime = Date.now();
-        const firstTokenMs = firstTokenTime - requestStart;
+        // const firstTokenMs = firstTokenTime - requestStart;
         // console.log(`[OLLAMA_METRIC_STREAM] firstTokenMs: ${firstTokenMs}`);
       }
       yield chunk.choices[0]?.delta?.content || '';
@@ -105,24 +107,49 @@ totalMs: ${totalMs}`);
   }
 
   async embed(text: string): Promise<number[]> {
-    const response = await fetch(`${process.env.OLLAMA_BASE_URL || 'http://localhost:11434'}/api/embeddings`, {
+    const baseUrl = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
+    
+    // Try /api/embed first (modern Ollama endpoint)
+    try {
+      const response = await fetch(`${baseUrl}/api/embed`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: this.embedModel,
+          input: text,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.embeddings && data.embeddings.length > 0) {
+          return data.embeddings[0];
+        }
+      }
+    } catch (err) {
+      console.warn(`[OLLAMA_EMBED] /api/embed failed, trying /api/embeddings...`);
+    }
+
+    // Fallback to /api/embeddings (legacy endpoint)
+    const response = await fetch(`${baseUrl}/api/embeddings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: this.model,
+        model: this.embedModel,
         prompt: text,
       }),
     });
 
     if (!response.ok) {
-      throw new Error(`Ollama Embedding Error: ${response.statusText}`);
+      const errorBody = await response.text();
+      throw new Error(`Ollama Embedding Error (${response.status}): ${errorBody}`);
     }
 
     const data = await response.json();
     return data.embedding;
   }
 
-  async vision(messages: LLMMessage[], imageUrl: string, options?: any): Promise<LLMResponse> {
+  async vision(messages: LLMMessage[], _imageUrl: string, options?: any): Promise<LLMResponse> {
     // Ollama supports vision with models like llava, but for now we'll just try to generate
     return this.generate(messages, options);
   }

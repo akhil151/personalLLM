@@ -14,6 +14,7 @@ export class SystemHealthAudit {
     
     const results = {
       ollama: await this.checkOllama(),
+      embeddings: await this.checkEmbeddings(),
       groq: await this.checkGroq(),
       supabase: await this.checkSupabase(),
       playwright: await this.checkPlaywright(),
@@ -63,6 +64,47 @@ export class SystemHealthAudit {
     } catch (err: any) {
       console.error(`[CRITICAL] Ollama failure: ${err.message}`);
       return 'CRITICAL';
+    }
+  }
+
+  private static async checkEmbeddings() {
+    const start = Date.now();
+    try {
+      const baseUrl = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
+      const model = process.env.OLLAMA_EMBED_MODEL || 'nomic-embed-text';
+
+      console.log(`[DIAGNOSTIC] Checking embeddings with model: ${model}`);
+
+      // Try /api/embed
+      const res = await fetch(`${baseUrl}/api/embed`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, input: 'test' })
+      });
+
+      if (res.ok) {
+        console.log(`[OK] Embeddings verified using /api/embed with ${model}`);
+        return 'OK';
+      }
+
+      // Try fallback /api/embeddings
+      const fallbackRes = await fetch(`${baseUrl}/api/embeddings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, prompt: 'test' })
+      });
+
+      if (fallbackRes.ok) {
+        console.log(`[OK] Embeddings verified using /api/embeddings with ${model}`);
+        return 'OK';
+      }
+
+      const errorBody = await fallbackRes.text();
+      console.warn(`[DEGRADED] Embeddings unavailable. Model: ${model}, Status: ${fallbackRes.status}, Error: ${errorBody}`);
+      return 'DEGRADED';
+    } catch (err: any) {
+      console.warn(`[DEGRADED] Embeddings check failed: ${err.message}`);
+      return 'DEGRADED';
     }
   }
 

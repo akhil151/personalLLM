@@ -20,19 +20,23 @@ export const memoryService = {
     content: string
   ) {
     const supabase = createAdminClient();
-    const embedding = await embeddingService.generateEmbedding(content);
+    try {
+      const embedding = await embeddingService.generateEmbedding(content);
 
-    const { error } = await supabase
-      .from('message_embeddings')
-      .insert({
-        message_id: messageId,
-        conversation_id: conversationId,
-        user_id: userId,
-        content,
-        embedding,
-      });
+      const { error } = await supabase
+        .from('message_embeddings')
+        .insert({
+          message_id: messageId,
+          conversation_id: conversationId,
+          user_id: userId,
+          content,
+          embedding,
+        });
 
-    if (error) console.error('Error storing embedding:', error);
+      if (error) console.error('Error storing embedding:', error);
+    } catch (err) {
+      console.warn(`[MEMORY_SERVICE] Skipping embedding storage (DEGRADED): ${err instanceof Error ? err.message : String(err)}`);
+    }
   },
 
   /**
@@ -44,21 +48,26 @@ export const memoryService = {
    */
   async searchSimilarMemories(query: string, userId: string, limit = 5) {
     const supabase = createAdminClient();
-    const queryEmbedding = await embeddingService.generateEmbedding(query);
+    try {
+      const queryEmbedding = await embeddingService.generateEmbedding(query);
 
-    // We call the PostgreSQL function 'match_messages' we created in schema.sql
-    const { data, error } = await supabase.rpc('match_messages', {
-      query_embedding: queryEmbedding,
-      match_threshold: 0.5, // Only return reasonably similar results
-      match_count: limit,
-      p_user_id: userId,
-    });
+      // We call the PostgreSQL function 'match_messages' we created in schema.sql
+      const { data, error } = await supabase.rpc('match_messages', {
+        query_embedding: queryEmbedding,
+        match_threshold: 0.5, // Only return reasonably similar results
+        match_count: limit,
+        p_user_id: userId,
+      });
 
-    if (error) {
-      console.error('Error searching memories:', error);
+      if (error) {
+        console.error('Error searching memories:', error);
+        return [];
+      }
+
+      return data;
+    } catch (err) {
+      console.warn(`[MEMORY_SERVICE] Skipping similarity search (DEGRADED): ${err instanceof Error ? err.message : String(err)}`);
       return [];
     }
-
-    return data;
   }
 };
