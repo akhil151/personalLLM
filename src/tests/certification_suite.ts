@@ -11,28 +11,26 @@ const uuidv4 = () => '550e8400-e29b-41d4-a716-44665544' + Math.floor(Math.random
 
 async function runCertification() {
   console.log('--- DEBUG ENV ---');
-  console.log('GEMINI_API_KEY:', process.env.GEMINI_API_KEY ? 'EXISTS' : 'MISSING');
-  console.log('OPENROUTER_API_KEY:', process.env.OPENROUTER_API_KEY ? 'EXISTS' : 'MISSING');
+  console.log('GROQ_API_KEY:', process.env.GROQ_API_KEY ? 'EXISTS' : 'MISSING');
+  console.log('OLLAMA_BASE_URL:', process.env.OLLAMA_BASE_URL ? 'EXISTS' : 'MISSING');
   console.log('-----------------\n');
   console.log('==================================================');
-  console.log('PHASE Y.6.1 — REAL PROVIDER FAILOVER CERTIFICATION');
+  console.log('PHASE Z.4.2 — CONSOLIDATED PROVIDER CERTIFICATION');
   console.log('==================================================\n');
 
   // PART 1: PROVIDER INVENTORY
   console.log('PART 1 — PROVIDER INVENTORY');
   console.log('---------------------------');
-  const providers = ['openai', 'gemini', 'openrouter'];
+  const providers = ['ollama', 'groq'];
   for (const name of providers) {
     try {
       const start = Date.now();
-      // Test with a simple prompt
-      let model = name === 'openai' ? 'gpt-4o-mini' : (name === 'gemini' ? 'gemini-2.0-flash' : 'anthropic/claude-3-haiku');
       const p = (providerRouter as any).getProvider(name);
       if (!p) throw new Error('Provider not found');
       
-      await p.generate([{ role: 'user', content: 'hi' }], { model });
+      await p.generate([{ role: 'user', content: 'hi' }]);
       const latency = Date.now() - start;
-      console.log(`${name.padEnd(12)} | Status: OK      | Latency: ${latency}ms | Model: ${model}`);
+      console.log(`${name.padEnd(12)} | Status: OK      | Latency: ${latency}ms`);
     } catch (err: any) {
       console.log(`${name.padEnd(12)} | Status: FAILED  | Error: ${err.message.substring(0, 50)}...`);
     }
@@ -84,7 +82,10 @@ async function runCertification() {
   console.log('-----------------------------');
   try {
     // This is complex, let's just test if agents can be initialized and talk to LLM
-    const result = await orchestratorService.dispatch('research', { query: 'AI startups' });
+    const result = await orchestratorService.dispatch('research', { 
+      runId: uuidv4(), 
+      data: { topic: 'AI startups', context: {} } 
+    });
     console.log('Research Agent result:', result ? 'Received' : 'Empty');
     console.log('PASS');
   } catch (err: any) {

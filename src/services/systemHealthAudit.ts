@@ -13,7 +13,8 @@ export class SystemHealthAudit {
     console.log('--- STARTING SYSTEM HEALTH AUDIT ---');
     
     const results = {
-      openai: await this.checkOpenAI(),
+      ollama: await this.checkOllama(),
+      groq: await this.checkGroq(),
       supabase: await this.checkSupabase(),
       playwright: await this.checkPlaywright(),
       mcp: await this.checkMCP(),
@@ -32,12 +33,45 @@ export class SystemHealthAudit {
     console.log('--- SYSTEM HEALTH AUDIT PASSED ---');
   }
 
-  private static async checkOpenAI() {
-    if (!process.env.OPENAI_API_KEY) {
-      console.error('[CRITICAL] OPENAI_API_KEY is missing');
+  private static async checkOllama() {
+    const start = Date.now();
+    try {
+      const baseUrl = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
+      const model = process.env.OLLAMA_MODEL || 'qwen3:8b';
+
+      // 1. Ping
+      const pingRes = await fetch(`${baseUrl}/api/tags`);
+      if (!pingRes.ok) throw new Error('Ollama ping failed');
+
+      // 2. Warmup / Cache model load
+      const warmupRes = await fetch(`${baseUrl}/api/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: model,
+          prompt: 'hi',
+          stream: false
+        })
+      });
+
+      if (!warmupRes.ok) throw new Error(`Ollama warmup failed for model ${model}`);
+
+      const loadTimeMs = Date.now() - start;
+      console.log(`[OLLAMA_WARMUP] loadTimeMs: ${loadTimeMs}`);
+      console.log(`[OK] Ollama verified and warmed up with ${model}`);
+      return 'OK';
+    } catch (err: any) {
+      console.error(`[CRITICAL] Ollama failure: ${err.message}`);
       return 'CRITICAL';
     }
-    console.log('[OK] OPENAI_API_KEY found');
+  }
+
+  private static async checkGroq() {
+    if (!process.env.GROQ_API_KEY) {
+      console.error('[CRITICAL] GROQ_API_KEY is missing');
+      return 'CRITICAL';
+    }
+    console.log('[OK] GROQ_API_KEY found');
     return 'OK';
   }
 

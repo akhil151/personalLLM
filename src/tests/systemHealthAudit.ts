@@ -1,3 +1,6 @@
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env.local' });
+
 import { createAdminClient } from '../lib/supabase-admin';
 import { mcpService } from '../mcp/mcpService';
 import { chromium } from 'playwright';
@@ -6,12 +9,18 @@ async function runHealthCheck() {
   console.log('--- PART 6: ENVIRONMENT HEALTH CHECK ---');
   let overallStatus = 'HEALTHY';
 
-  // 1. Check OpenAI Key
-  if (!process.env.OPENAI_API_KEY) {
-    console.error('[CRITICAL] OPENAI_API_KEY is missing');
+  // 1. Check LLM Keys
+  if (!process.env.GROQ_API_KEY) {
+    console.error('[CRITICAL] GROQ_API_KEY is missing');
     overallStatus = 'CRITICAL';
   } else {
-    console.log('[OK] OPENAI_API_KEY found');
+    console.log('[OK] GROQ_API_KEY found');
+  }
+
+  if (!process.env.OLLAMA_BASE_URL) {
+    console.warn('[WARNING] OLLAMA_BASE_URL is missing, using default');
+  } else {
+    console.log('[OK] OLLAMA_BASE_URL found');
   }
 
   // 2. Check Supabase
