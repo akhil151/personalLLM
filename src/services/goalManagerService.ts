@@ -7,6 +7,14 @@ const MilestoneSchema = z.object({
   description: z.string().optional(),
   order_index: z.number(),
   target_date: z.string().optional(),
+  priority: z.enum(['low', 'medium', 'high']).default('medium'),
+  estimated_effort: z.number().optional(), // in hours
+  tasks: z.array(z.object({
+    title: z.string(),
+    description: z.string().optional(),
+    priority: z.enum(['low', 'medium', 'high']).default('medium'),
+    estimated_effort: z.number().optional()
+  })).optional().default([])
 });
 
 const GoalPlanSchema = z.object({
@@ -59,13 +67,37 @@ export const goalManagerService = {
     if (goalError) throw goalError;
 
     // 2. Call LLM to break down goal
-    const systemPrompt = `You are a Chief of Staff AI. Break down the following user goal into a logical sequence of milestones.
-Each milestone should be actionable and clear.`;
+    const systemPrompt = `You are a Chief of Staff AI. Break down the following user goal into a logical sequence of milestones and granular tasks.
+Jarvis must think like a Chief of Staff. Milestones must be meaningful, not placeholders like "Milestone 1".
+
+CRITICAL: Your response MUST be a JSON object with a "milestones" key that is an ARRAY of objects.
+Example structure:
+{
+  "milestones": [
+    {
+      "title": "Build Foundations",
+      "description": "Learn basics",
+      "order_index": 0,
+      "priority": "high",
+      "tasks": [
+        { "title": "Read chapter 1", "priority": "medium" }
+      ]
+    }
+  ],
+  "priority": "medium"
+}
+
+For every milestone, generate:
+- title
+- description
+- priority (low, medium, high)
+- estimated_effort (in hours)
+- tasks (ARRAY of objects with title and priority)`;
     
     const userPrompt = `Goal: ${goal.title}
 Description: ${goal.description || 'No description provided.'}
 
-Provide a structured plan with milestones, priority, and estimated completion dates.`;
+Provide a detailed, executable plan with milestones and tasks.`;
 
     const plan = await llmService.getStructuredOutput(
       [
@@ -110,7 +142,7 @@ Provide a structured plan with milestones, priority, and estimated completion da
       
       if (milestones) {
         totalMilestones += milestones.length;
-        completedMilestones += milestones.filter(m => m.status === 'completed').length;
+        completedMilestones += milestones.filter((m: any) => m.status === 'completed').length;
       }
     }
 

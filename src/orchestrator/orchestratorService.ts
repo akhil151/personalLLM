@@ -5,6 +5,9 @@ import { eventBus } from '@/events/eventBus';
 import { projectStateService } from '@/services/projectStateService';
 import { goalManagerService } from '@/services/goalManagerService';
 import { jarvisRecommendationService } from '@/services/jarvisRecommendationService';
+import { priorityEngine } from '@/services/priorityEngine';
+import { blockerDetectionService } from '@/services/blockerDetectionService';
+import { jarvisService } from '@/services/jarvisService';
 
 /**
  * OrchestratorService is the central brain of the multi-agent system.
@@ -38,24 +41,24 @@ export const orchestratorService = {
 
     // 1.5 PHASE Z.3.5: Ensure Project and Goal exist for this run
     try {
-      const activeProject = await projectStateService.getActiveProject();
+      const activeProject = await projectStateService.getActiveProject(userId);
       if (!activeProject) {
         console.log(`[ORCHESTRATOR] No active project found. Creating project for goal: ${goal}`);
-        const newProject = await supabase.from('jarvis_projects').insert([{
+        const newProject = await supabase.from('user_projects').insert([{
           user_id: userId,
-          name: goal.slice(0, 50),
+          title: goal.slice(0, 50),
           description: goal,
           status: 'active',
-          progress: 0
+          health_state: 'green'
         }]).select().single();
         
         if (newProject.data) {
-          await supabase.from('jarvis_goals').insert([{
+          await supabase.from('user_goals').insert([{
             user_id: userId,
             title: goal,
-            description: `Primary goal for project ${newProject.data.name}`,
+            description: `Primary goal for project ${newProject.data.title}`,
             status: 'active',
-            progress: 0
+            progress_percentage: 0
           }]);
         }
       }
@@ -108,15 +111,22 @@ export const orchestratorService = {
     // 1. Context Awareness Injection
     try {
       if (input.userId) {
-        const [goals, recommendations] = await Promise.all([
+        const [goals, projects, nextAction, blockers, brief] = await Promise.all([
           createAdminClient().from('user_goals').select('*').eq('user_id', input.userId).eq('status', 'active'),
-          jarvisRecommendationService.getLatestRecommendations(input.userId, 3)
+          createAdminClient().from('user_projects').select('*, milestones:project_milestones(*)').eq('user_id', input.userId).eq('status', 'active'),
+          priorityEngine.determineNextAction(input.userId),
+          blockerDetectionService.detectBlockers(input.userId),
+          jarvisService.generateExecutiveBrief(input.userId)
         ]);
 
         // Augment input with Chief of Staff intelligence
         input.cos_context = {
-          active_goals: goals.data || [],
-          recent_recommendations: recommendations || []
+          activeGoal: goals.data?.[0] || null,
+          activeProject: projects.data?.[0] || null,
+          currentMilestone: projects.data?.[0]?.milestones?.find((m: any) => m.status === 'in_progress') || null,
+          nextAction: nextAction,
+          activeBlockers: blockers,
+          executiveBrief: brief
         };
       }
     } catch (err) {

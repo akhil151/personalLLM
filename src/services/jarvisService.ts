@@ -1,13 +1,18 @@
 import { createAdminClient } from '../lib/supabase-admin';
 import { llmService } from './llmService';
 import { z } from 'zod';
+import { priorityEngine } from './priorityEngine';
+import { blockerDetectionService } from './blockerDetectionService';
 
 const ExecutiveBriefSchema = z.object({
-  current_focus: z.string(),
-  recent_changes: z.string(),
+  goal_summary: z.string(),
+  progress_percentage: z.number(),
+  active_projects_count: z.number(),
+  completed_milestones_summary: z.string(),
   blocked_items: z.array(z.string()),
-  next_steps: z.array(z.string()),
-  highest_priority_action: z.string()
+  highest_priority: z.string(),
+  priority_reason: z.string(),
+  next_recommended_action: z.string()
 });
 
 /**
@@ -15,37 +20,42 @@ const ExecutiveBriefSchema = z.object({
  */
 export const jarvisService = {
   /**
-   * Generates a daily executive summary (The "Executive Brief").
+   * Generates a daily executive summary (The "Executive Brief V2").
    */
   async generateExecutiveBrief(userId: string) {
     const supabase = createAdminClient();
     
-    // 1. Gather all relevant context
-    const [goals, projects, recommendations, recentActivity] = await Promise.all([
+    // 1. Gather all relevant context using new engines
+    const [goals, projects, nextAction, blockers] = await Promise.all([
       supabase.from('user_goals').select('*').eq('user_id', userId).eq('status', 'active'),
       supabase.from('user_projects').select('*, milestones:project_milestones(*)').eq('user_id', userId).eq('status', 'active'),
-      supabase.from('jarvis_recommendations').select('*').eq('user_id', userId).eq('status', 'pending').limit(3),
-      supabase.from('messages').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(30)
+      priorityEngine.determineNextAction(userId),
+      blockerDetectionService.detectBlockers(userId)
     ]);
 
-    // 2. Prepare LLM prompt
-    const systemPrompt = `You are the Chief of Staff AI. Generate a concise, high-impact executive brief for the user.
-Answer:
-- What is the user working on?
-- What changed recently?
-- What is blocked?
-- What should happen next?
-- What is the highest priority action?
+    // 2. Prepare LLM prompt for V2
+    const systemPrompt = `You are the Chief of Staff AI. Generate a TODAY'S EXECUTIVE BRIEF.
+The brief must be highly professional, accurate, and focused on driving execution.
+
+Your response MUST be a JSON object with the following keys:
+- goal_summary: A concise summary of the primary active goal
+- progress_percentage: The overall progress percentage (number)
+- active_projects_count: Number of active projects (number)
+- completed_milestones_summary: A summary of completed vs total milestones
+- blocked_items: An array of strings describing active blockers
+- highest_priority: The title of the most important next task
+- priority_reason: Why this task is the highest priority
+- next_recommended_action: A clear, actionable next step for the user
 
 BE CONCISE. BE ACTIONABLE.`;
 
     const userPrompt = `Context:
 Goals: ${JSON.stringify(goals.data)}
 Projects: ${JSON.stringify(projects.data)}
-Recommendations: ${JSON.stringify(recommendations.data)}
-Recent Activity: ${JSON.stringify(recentActivity.data)}
+Calculated Next Action: ${JSON.stringify(nextAction)}
+Detected Blockers: ${JSON.stringify(blockers)}
 
-Generate the executive brief.`;
+Generate the executive brief V2.`;
 
     const result = await llmService.getStructuredOutput(
       [
@@ -57,13 +67,7 @@ Generate the executive brief.`;
       'executive-briefing'
     );
 
-    return {
-      current_focus: result.current_focus || 'Analyzing active goals and projects...',
-      recent_changes: result.recent_changes || 'Monitoring for updates...',
-      blocked_items: result.blocked_items || [],
-      next_steps: result.next_steps || [],
-      highest_priority_action: result.highest_priority_action || 'Complete initial project setup.'
-    };
+    return result;
   },
 
   /**
