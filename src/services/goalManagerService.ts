@@ -1,27 +1,6 @@
 import { createAdminClient } from '../lib/supabase-admin';
 import { llmService } from './llmService';
-import { z } from 'zod';
-
-const MilestoneSchema = z.object({
-  title: z.string(),
-  description: z.string().optional(),
-  order_index: z.number(),
-  target_date: z.string().optional(),
-  priority: z.enum(['low', 'medium', 'high']).default('medium'),
-  estimated_effort: z.number().optional(), // in hours
-  tasks: z.array(z.object({
-    title: z.string(),
-    description: z.string().optional(),
-    priority: z.enum(['low', 'medium', 'high']).default('medium'),
-    estimated_effort: z.number().optional()
-  })).optional().default([])
-});
-
-const GoalPlanSchema = z.object({
-  milestones: z.array(MilestoneSchema),
-  priority: z.enum(['low', 'medium', 'high']),
-  estimated_completion_date: z.string().optional(),
-});
+import { GoalPlanSchema } from '../types/schemas';
 
 /**
  * GoalManagerService handles high-level user intent.

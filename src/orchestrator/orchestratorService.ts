@@ -8,6 +8,7 @@ import { jarvisRecommendationService } from '@/services/jarvisRecommendationServ
 import { priorityEngine } from '@/services/priorityEngine';
 import { blockerDetectionService } from '@/services/blockerDetectionService';
 import { jarvisService } from '@/services/jarvisService';
+import { CosContextSchema } from '@/types/schemas';
 
 /**
  * OrchestratorService is the central brain of the multi-agent system.
@@ -108,7 +109,7 @@ export const orchestratorService = {
       throw new Error(`Agent for role ${role} not found in registry.`);
     }
 
-    // 1. Context Awareness Injection
+    // 1. Context Awareness Injection (STRICT CONTRACT)
     try {
       if (input.userId) {
         const [goals, projects, nextAction, blockers, brief] = await Promise.all([
@@ -119,8 +120,8 @@ export const orchestratorService = {
           jarvisService.generateExecutiveBrief(input.userId)
         ]);
 
-        // Augment input with Chief of Staff intelligence
-        input.cos_context = {
+        // Augment input with Chief of Staff intelligence with strict defaults
+        const rawContext = {
           activeGoal: goals.data?.[0] || null,
           activeProject: projects.data?.[0] || null,
           currentMilestone: projects.data?.[0]?.milestones?.find((m: any) => m.status === 'in_progress') || null,
@@ -128,9 +129,14 @@ export const orchestratorService = {
           activeBlockers: blockers,
           executiveBrief: brief
         };
+        
+        // Validate and populate defaults using schema
+        const validation = CosContextSchema.safeParse(rawContext);
+        input.cos_context = validation.success ? validation.data : CosContextSchema.parse({});
       }
     } catch (err) {
-      console.warn('[ORCHESTRATOR] Failed to inject CoS context:', err);
+      console.warn('[ORCHESTRATOR] Failed to inject CoS context, using defaults:', err);
+      input.cos_context = CosContextSchema.parse({});
     }
 
     console.log(`Dispatching to ${agent.name}...`);

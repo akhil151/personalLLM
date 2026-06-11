@@ -35,7 +35,16 @@ export const jarvisRecommendationService = {
 Analyze their goals, projects, and recent activity to identify:
 1. Immediate next actions for stalled projects.
 2. New opportunities aligned with their goals.
-3. Potential blockers and how to avoid them.`;
+3. Potential blockers and how to avoid them.
+
+Your response MUST be a JSON object with the following key:
+- recommendations: An array of objects, each with:
+  - title: String, the recommendation title
+  - reasoning: String, why this recommendation is important
+  - impact: String, the impact level (e.g., "High Impact", "Medium Impact")
+  - urgency: String, one of "low", "medium", "high", "critical"
+  - goal_id: String (optional) - ONLY include if you have a valid UUID from the provided context, otherwise omit it!
+  - project_id: String (optional) - ONLY include if you have a valid UUID from the provided context, otherwise omit it!`;
 
     const userPrompt = `Context:
 Active Goals: ${JSON.stringify(goals.data)}
@@ -54,11 +63,12 @@ Generate 3-5 high-quality recommendations.`;
       'recommendation-generation'
     );
 
-    // 3. Store recommendations
+    // 3. Store recommendations - only use valid UUIDs for goal_id and project_id
+    const validUuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     const recommendationsToInsert = result.recommendations.map(r => ({
       user_id: userId,
-      goal_id: r.goal_id,
-      project_id: r.project_id,
+      goal_id: (r.goal_id && validUuidRegex.test(r.goal_id)) ? r.goal_id : null,
+      project_id: (r.project_id && validUuidRegex.test(r.project_id)) ? r.project_id : null,
       title: r.title || 'New Recommendation',
       reasoning: r.reasoning || 'Based on your current goals and activity.',
       impact: r.impact || 'High Impact',

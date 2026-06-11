@@ -40,6 +40,7 @@ export const projectStateService = {
     if (projectError) throw projectError;
 
     // 4. Create milestones and tasks
+    const createdMilestones: any[] = [];
     for (let i = 0; i < plan.milestones.length; i++) {
       const m = plan.milestones[i];
       const { data: milestone, error: milestoneError } = await supabase
@@ -60,6 +61,7 @@ export const projectStateService = {
         .single();
 
       if (milestoneError) throw milestoneError;
+      createdMilestones.push(milestone);
 
       if (m.tasks && m.tasks.length > 0) {
         const tasks = m.tasks
@@ -84,7 +86,7 @@ export const projectStateService = {
       }
     }
 
-    return { project };
+    return { project, milestones: createdMilestones };
   },
 
   /**

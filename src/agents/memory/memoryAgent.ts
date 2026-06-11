@@ -17,10 +17,25 @@ export class MemoryAgent implements IAgent {
   role = 'memory' as const;
 
   async execute(input: AgentInput): Promise<AgentOutput> {
-    const { runId, userId, data } = input;
-    const { task, goal } = data;
+    const { runId, userId, data, cos_context } = input;
+    
+    // Ensure we always have task and goal
+    let task = data?.task;
+    let goal = data?.goal;
+    
+    if (!task) {
+      const fallbackTaskTitle = cos_context?.nextAction?.nextAction || 'Retrieve relevant memories';
+      task = {
+        title: fallbackTaskTitle,
+        description: cos_context?.executiveBrief?.next_recommended_action || 'No task description available.',
+        priority: 'medium'
+      };
+    }
+    if (!goal) {
+      goal = cos_context?.activeGoal?.title || cos_context?.executiveBrief?.goal_summary || 'Current user goal';
+    }
 
-    await orchestratorService.logStep(runId, this.name, 'thought', `Retrieving relevant context for task: ${task.title}`);
+    await orchestratorService.logStep(runId, this.name, 'thought', `Retrieving relevant memories for task: ${task.title}`);
 
     try {
       // 1. Determine if this is a storage or retrieval task

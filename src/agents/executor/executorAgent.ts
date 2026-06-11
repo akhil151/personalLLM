@@ -26,8 +26,25 @@ export class ExecutorAgent implements IAgent {
   private dangerousActions = ['schedule_task', 'delete_data', 'query_db', 'mcp_filesystem_write_file'];
 
   async execute(input: AgentInput): Promise<AgentOutput> {
-    const { runId, data } = input;
-    const { task, context, goal } = data;
+    const { runId, data, cos_context } = input;
+    
+    // Ensure we always have a task and goal
+    let task = data?.task;
+    let goal = data?.goal;
+    let context = data?.context || '';
+    
+    if (!task) {
+      // Use cos_context to get a fallback task
+      const fallbackTaskTitle = cos_context?.nextAction?.nextAction || 'Continue with current work';
+      task = {
+        title: fallbackTaskTitle,
+        description: cos_context?.executiveBrief?.next_recommended_action || 'No task description available.',
+        priority: 'medium'
+      };
+    }
+    if (!goal) {
+      goal = cos_context?.activeGoal?.title || cos_context?.executiveBrief?.goal_summary || 'Complete current task';
+    }
 
     await orchestratorService.logStep(runId, this.name, 'thought', `Analyzing task: "${task.title}" for tool selection.`);
 

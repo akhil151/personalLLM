@@ -1,19 +1,8 @@
 import { createAdminClient } from '../lib/supabase-admin';
 import { llmService } from './llmService';
-import { z } from 'zod';
+import { ExecutiveBriefSchema } from '../types/schemas';
 import { priorityEngine } from './priorityEngine';
 import { blockerDetectionService } from './blockerDetectionService';
-
-const ExecutiveBriefSchema = z.object({
-  goal_summary: z.string(),
-  progress_percentage: z.number(),
-  active_projects_count: z.number(),
-  completed_milestones_summary: z.string(),
-  blocked_items: z.array(z.string()),
-  highest_priority: z.string(),
-  priority_reason: z.string(),
-  next_recommended_action: z.string()
-});
 
 /**
  * JarvisService handles the executive intelligence layer, providing briefings and summaries.
