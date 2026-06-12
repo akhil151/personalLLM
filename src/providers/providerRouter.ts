@@ -21,6 +21,10 @@ export class ProviderRouter {
     consecutiveFailures: number 
   }> = new Map();
 
+  getPrimaryProvider(): string {
+    return 'ollama';
+  }
+
   constructor() {
     this.providers = [
       new OllamaProvider(),

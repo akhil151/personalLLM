@@ -4,6 +4,26 @@ import { createAdminClient } from '@/lib/supabase-admin';
  * UserIntelligenceService manages the dynamic user model.
  */
 export const userIntelligenceService = {
+  /**
+   * Gets comprehensive user intelligence for dashboard.
+   */
+  async getUserIntelligence(userId: string) {
+    const supabase = createAdminClient();
+    
+    const [goals, projects, recommendations, metrics] = await Promise.all([
+      supabase.from('user_goals').select('*').eq('user_id', userId),
+      supabase.from('user_projects').select('*, milestones:project_milestones(*, tasks:milestone_tasks(*))').eq('user_id', userId),
+      supabase.from('jarvis_recommendations').select('*').eq('user_id', userId),
+      supabase.from('user_progress_metrics').select('*').eq('user_id', userId)
+    ]);
+
+    return {
+      goals: goals.data,
+      projects: projects.data,
+      recommendations: recommendations.data,
+      metrics: metrics.data
+    };
+  },
   async _getSupabase() {
     if (typeof window === 'undefined') {
       try {

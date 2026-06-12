@@ -79,9 +79,8 @@ Generate the executive brief V2.`;
         active_goals_count: goals.count || 0,
         active_projects_count: projects.count || 0,
         completed_tasks_count: tasks.count || 0,
-        project_velocity: 0.0, // Calculated separately if needed
-        updated_at: new Date().toISOString()
-      })
+        project_velocity: 0.0 // Calculated separately if needed
+      }, { onConflict: 'user_id,metric_date' })
       .select()
       .single();
 

@@ -159,5 +159,20 @@ export const projectStateService = {
 
     if (error && error.code !== 'PGRST116') throw error; // PGRST116 is "no rows found"
     return data;
+  },
+
+  /**
+   * Gets all active projects for a user.
+   */
+  async getActiveProjects(userId: string) {
+    const supabase = createAdminClient();
+    const { data, error } = await supabase
+      .from('user_projects')
+      .select('*, goal:user_goals(*), milestones:project_milestones(*, tasks:milestone_tasks(*))')
+      .eq('user_id', userId)
+      .eq('status', 'active');
+
+    if (error) throw error;
+    return data;
   }
 };

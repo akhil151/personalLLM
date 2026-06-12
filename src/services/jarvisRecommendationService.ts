@@ -7,7 +7,10 @@ const RecommendationSchema = z.object({
     title: z.string(),
     reasoning: z.string(),
     impact: z.string(),
-    urgency: z.enum(['low', 'medium', 'high', 'critical']),
+    urgency: z.string().toLowerCase().transform(val => {
+      const allowed = ['low', 'medium', 'high', 'critical'];
+      return allowed.includes(val) ? val : 'medium';
+    }),
     goal_id: z.string().optional(),
     project_id: z.string().optional()
   }))
@@ -63,12 +66,13 @@ Generate 3-5 high-quality recommendations.`;
       'recommendation-generation'
     );
 
-    // 3. Store recommendations - only use valid UUIDs for goal_id and project_id
-    const validUuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    // 3. Store recommendations - only use goal_id and project_id that actually exist in the database
+    const existingGoalIds = new Set(goals.data?.map(g => g.id) || []);
+    const existingProjectIds = new Set(projects.data?.map(p => p.id) || []);
     const recommendationsToInsert = result.recommendations.map(r => ({
       user_id: userId,
-      goal_id: (r.goal_id && validUuidRegex.test(r.goal_id)) ? r.goal_id : null,
-      project_id: (r.project_id && validUuidRegex.test(r.project_id)) ? r.project_id : null,
+      goal_id: (r.goal_id && existingGoalIds.has(r.goal_id)) ? r.goal_id : null,
+      project_id: (r.project_id && existingProjectIds.has(r.project_id)) ? r.project_id : null,
       title: r.title || 'New Recommendation',
       reasoning: r.reasoning || 'Based on your current goals and activity.',
       impact: r.impact || 'High Impact',

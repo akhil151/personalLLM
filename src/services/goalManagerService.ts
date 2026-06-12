@@ -161,5 +161,43 @@ Provide a detailed, executable plan with milestones and tasks.`;
     }
 
     return goals;
+  },
+
+  /**
+   * Gets the most active goal (highest priority, most recent) for a user.
+   */
+  async getActiveGoal(userId?: string) {
+    const supabase = createAdminClient();
+    let query = supabase
+      .from('user_goals')
+      .select('*')
+      .eq('status', 'active')
+      .order('priority', { ascending: false }) // high > medium > low
+      .order('updated_at', { ascending: false })
+      .limit(1);
+
+    if (userId) {
+      query = query.eq('user_id', userId);
+    }
+
+    const { data, error } = await query.single();
+    if (error && error.code !== 'PGRST116') throw error; // PGRST116 is no rows found
+    return data;
+  },
+
+  /**
+   * Gets all active goals for a user.
+   */
+  async getActiveGoals(userId: string) {
+    const supabase = createAdminClient();
+    const { data, error } = await supabase
+      .from('user_goals')
+      .select('*, projects:user_projects(*)')
+      .eq('user_id', userId)
+      .eq('status', 'active')
+      .order('priority', { ascending: false });
+
+    if (error) throw error;
+    return data;
   }
 };
