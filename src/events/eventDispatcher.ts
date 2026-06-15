@@ -110,7 +110,7 @@ export const eventDispatcher = {
 
             // 5. Trigger Recommendation Refresh
             console.log(`[LEARNING] Refreshing recommendations...`);
-            await jarvisRecommendationService.getRecommendations();
+            await jarvisRecommendationService.generateProactiveRecommendations(run.user_id);
           }
         }
       } catch (err) {

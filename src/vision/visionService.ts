@@ -37,7 +37,9 @@ export const visionService = {
       const perception = await llmService.analyzeImage(
         imageUrl,
         systemPrompt,
-        `Analyze the current browser state for goal: ${goal}`
+        `Analyze the current browser state for goal: ${goal}`,
+        'system',
+        'browser'
       );
 
       return perception;

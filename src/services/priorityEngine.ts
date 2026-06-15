@@ -41,7 +41,7 @@ export const priorityEngine = {
     }
 
     // 2. Score each task
-    const scoredTasks = activeTasks.map(task => {
+    const scoredTasks = activeTasks.map((task: any) => {
       let importance = 30; // default medium
       let urgency = 30; // default medium
       let dependencyWeight = 0;
@@ -58,7 +58,7 @@ export const priorityEngine = {
       if (task.order_index === 0) dependencyWeight = 20;
 
       // Blocked Penalty
-      const isBlocked = activeBlockers.some(b => b.task_id === task.id || b.milestone_id === task.milestone_id);
+      const isBlocked = activeBlockers.some((b: any) => b.task_id === task.id || b.milestone_id === task.milestone_id);
       if (isBlocked) blockedPenalty = 100;
 
       const score = importance + urgency + dependencyWeight - blockedPenalty;
@@ -72,7 +72,7 @@ export const priorityEngine = {
     });
 
     // 3. Find highest score
-    const bestTask = scoredTasks.reduce((prev, current) => (prev.score > current.score) ? prev : current);
+    const bestTask = scoredTasks.reduce((prev: any, current: any) => (prev.score > current.score) ? prev : current);
 
     return {
       nextAction: bestTask.task.title,

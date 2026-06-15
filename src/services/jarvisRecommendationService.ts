@@ -67,8 +67,8 @@ Generate 3-5 high-quality recommendations.`;
     );
 
     // 3. Store recommendations - only use goal_id and project_id that actually exist in the database
-    const existingGoalIds = new Set(goals.data?.map(g => g.id) || []);
-    const existingProjectIds = new Set(projects.data?.map(p => p.id) || []);
+    const existingGoalIds = new Set(goals.data?.map((g: any) => g.id) || []);
+    const existingProjectIds = new Set(projects.data?.map((p: any) => p.id) || []);
     const recommendationsToInsert = result.recommendations.map(r => ({
       user_id: userId,
       goal_id: (r.goal_id && existingGoalIds.has(r.goal_id)) ? r.goal_id : null,

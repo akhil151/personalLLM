@@ -13,12 +13,12 @@ export const personalContextService = {
   async getUnifiedContext(userId: string) {
     const [profile, activeGoal, activeProject, recentReflections] = await Promise.all([
       userIntelligenceService.getUserProfile(userId),
-      goalManagerService.getActiveGoal(),
-      projectStateService.getActiveProject(),
+      goalManagerService.getActiveGoal(userId),
+      projectStateService.getActiveProject(userId),
       jarvisReflectionService.getLatestReflections(3)
     ]);
 
-    const recentSuccess = recentReflections.find(r => r.what_succeeded)?.what_succeeded || "Steady progress";
+    const recentSuccess = recentReflections.find((r: any) => r.what_succeeded)?.what_succeeded || "Steady progress";
     
     return {
       user: userId, // In a real app, this would be the user's name from auth

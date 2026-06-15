@@ -1,19 +1,25 @@
-# Database Reality Report
 
-## Tables Verified
-- user_goals: OK
-- user_projects: OK
-- project_milestones: OK
-- milestone_tasks: OK
-- project_blockers: OK
-- jarvis_recommendations: OK
-- user_progress_metrics: OK (note: should add updated_at column via migration_z4_7_fix_progress_metrics.sql)
+# Database Reality Report - Phase Z.5.0.C
 
-## Foreign Keys
-All foreign key constraints are valid.
+## Row Counts (After Chat Tests)
+Verify these tables have new records:
 
-## Inserts/Updates/Deletes
-All operations tested and passed.
+- agent_runs: ____
+- agent_tasks: ____
+- user_goals: ____
+- user_projects: ____
+- project_milestones: ____
+- jarvis_recommendations: ____
+- message_embeddings: ____
 
-## Realtime Subscriptions
-Realtime subscriptions are available via Supabase.
+## Instructions
+After running the chat tests, run these queries in Supabase:
+```sql
+SELECT COUNT(*) FROM agent_runs;
+SELECT COUNT(*) FROM agent_tasks;
+SELECT COUNT(*) FROM user_goals;
+SELECT COUNT(*) FROM user_projects;
+SELECT COUNT(*) FROM project_milestones;
+SELECT COUNT(*) FROM jarvis_recommendations;
+SELECT COUNT(*) FROM message_embeddings;
+```

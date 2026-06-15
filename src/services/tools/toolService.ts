@@ -164,7 +164,7 @@ export const toolHandlers: Record<string, (args: any) => Promise<any>> = {
 
     const [profile, goals, reflections] = await Promise.all([
       userIntelligenceService.getUserProfile(user_id),
-      goalManagerService.getGoals(), // In a real app, pass user_id if needed, but service uses auth
+      goalManagerService.getActiveGoals(user_id),
       jarvisReflectionService.getLatestReflections(5)
     ]);
 

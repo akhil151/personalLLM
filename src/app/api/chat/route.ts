@@ -5,7 +5,6 @@ import { llmService } from '@/services/llmService';
 import { promptService } from '@/services/promptService';
 import { observabilityService } from '@/services/observability/observabilityService';
 import { executionPipeline } from '@/orchestrator/executionPipeline';
-import '@/agents'; // Register agents
 import { streamText, convertToModelMessages, UIMessage } from 'ai';
 
 /**

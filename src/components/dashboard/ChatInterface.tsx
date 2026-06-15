@@ -30,11 +30,12 @@ export function ChatInterface({ conversationId, initialMessages }: ChatInterface
       role: m.role,
       parts: [{ type: 'text', text: m.content }],
     })),
-    onFinish: (message) => {
+    onFinish: (data) => {
       // If voice was active, read the response aloud
       if (isVoiceActive) {
-        // AI SDK 6 onFinish message structure check
-        const parts = message.message?.parts || message.parts || [];
+        // AI SDK 6 onFinish structure check
+        const lastMessage = data.messages[data.messages.length - 1];
+        const parts = lastMessage?.parts || [];
         const text = parts.filter((p: any) => p.type === 'text').map((p: any) => p.text).join(' ');
         if (text) {
           speak(text, () => {

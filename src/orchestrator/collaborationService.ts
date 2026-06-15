@@ -28,7 +28,7 @@ export const collaborationService = {
           table: 'collaboration_requests',
           filter: 'status=in.("approved","completed")'
         },
-        async (payload) => {
+        async (payload: any) => {
           const request = payload.new;
           console.log(`[COLLABORATION] Request ${request.id} ${request.status}. Resuming workflow ${request.run_id}`);
 

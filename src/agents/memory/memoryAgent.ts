@@ -1,6 +1,7 @@
 import { IAgent, AgentInput, AgentOutput, agentRegistry } from '@/orchestrator/agentRegistry';
 import { memoryService } from '@/services/memory/memoryService';
 import { orchestratorService } from '@/orchestrator/orchestratorService';
+import { createAdminClient } from '@/lib/supabase-admin';
 
 /**
  * MemoryAgent manages the cognitive context of the run.

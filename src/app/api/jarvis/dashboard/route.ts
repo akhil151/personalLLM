@@ -5,12 +5,19 @@ import { projectStateService } from '@/services/projectStateService';
 import { priorityEngine } from '@/services/priorityEngine';
 import { blockerDetectionService } from '@/services/blockerDetectionService';
 import { jarvisRecommendationService } from '@/services/jarvisRecommendationService';
+import { createClient } from '@/lib/supabase-server';
 import { createAdminClient } from '@/lib/supabase-admin';
 
 export async function GET() {
   try {
-    // For demo purposes, we'll use a placeholder user ID - in a real app, this would come from auth
-    const userId = 'demo-user-id';
+    const supabase = await createClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      console.log('Auth error:', authError);
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    const userId = user.id;
+    console.log('Dashboard API userId:', userId);
 
     // Fetch all required data in parallel
     const [
@@ -21,18 +28,21 @@ export async function GET() {
       blockers,
       recommendations,
       // Fetch tasks from milestone_tasks and agent_tasks
-      { data: milestoneTasks },
-      { data: agentTasks }
+      { data: milestoneTasks, error: milestoneError },
+      { data: agentTasks, error: agentError }
     ] = await Promise.all([
-      jarvisService.generateExecutiveBrief(userId),
-      goalManagerService.getActiveGoals(userId),
-      projectStateService.getActiveProjects(userId),
-      priorityEngine.determineNextAction(userId),
-      blockerDetectionService.detectBlockers(userId),
-      jarvisRecommendationService.getLatestRecommendations(userId),
+      jarvisService.generateExecutiveBrief(userId).catch(err => { console.log('generateExecutiveBrief error:', err); return null; }),
+      goalManagerService.getActiveGoals(userId).catch(err => { console.log('getActiveGoals error:', err); return []; }),
+      projectStateService.getActiveProjects(userId).catch(err => { console.log('getActiveProjects error:', err); return []; }),
+      priorityEngine.determineNextAction(userId).catch(err => { console.log('determineNextAction error:', err); return null; }),
+      blockerDetectionService.detectBlockers(userId).catch(err => { console.log('detectBlockers error:', err); return []; }),
+      jarvisRecommendationService.getLatestRecommendations(userId).catch(err => { console.log('getLatestRecommendations error:', err); return []; }),
       createAdminClient().from('milestone_tasks').select('*, milestone:project_milestones(project_id, goal_id)'),
       createAdminClient().from('agent_tasks').select('*')
     ]);
+
+    console.log('executiveBrief:', executiveBrief);
+    console.log('activeGoals:', activeGoals);
 
     // Prepare tasks data
     const allTasks = [...(milestoneTasks || []), ...(agentTasks || [])];
@@ -61,11 +71,11 @@ export async function GET() {
 
     const dashboardData = {
       executiveBrief: {
-        currentFocus: executiveBrief.goal_summary,
+        currentFocus: executiveBrief?.goal_summary || 'No focus set',
         highestPriorityGoal: activeGoals[0] || null,
         highestPriorityProject: activeProjects[0] || null,
-        nextBestAction: nextAction,
-        activeBlockers: blockers,
+        nextBestAction: nextAction || { nextAction: executiveBrief?.next_recommended_action || 'No action recommended', reason: executiveBrief?.priority_reason || '' },
+        activeBlockers: executiveBrief?.blocked_items || blockers || [],
         dailyProgressSummary: executiveBrief
       },
       goals: activeGoals,

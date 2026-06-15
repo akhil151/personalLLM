@@ -5,6 +5,7 @@ export interface AgentInput {
   conversationId: string;
   userId: string;
   data: any;
+  cos_context?: any;
 }
 
 export interface AgentOutput {
@@ -28,6 +29,15 @@ class AgentRegistry {
     console.log(`Agent registered: ${agent.name} (${agent.role})`);
   }
 
+  logRegisteredAgents() {
+    const registeredRoles = Array.from(this.agents.keys());
+    console.log('Registered Agents:', JSON.stringify(registeredRoles, null, 2));
+  }
+
+  listAgents(): AgentRole[] {
+    return Array.from(this.agents.keys());
+  }
+
   getAgent(role: AgentRole): IAgent | undefined {
     return this.agents.get(role);
   }
@@ -38,3 +48,11 @@ class AgentRegistry {
 }
 
 export const agentRegistry = new AgentRegistry();
+
+// Automatically register all agents when the module is loaded
+console.log("Registry loaded");
+
+// Import agents synchronously to ensure they register before the module finishes loading
+require('../agents');
+
+agentRegistry.logRegisteredAgents();

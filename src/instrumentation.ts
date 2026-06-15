@@ -5,6 +5,8 @@ export async function register() {
     const { schedulerService } = await import('./scheduler/schedulerService');
     const { collaborationService } = await import('./orchestrator/collaborationService');
     const { SystemHealthAudit } = await import('./services/systemHealthAudit');
+    // Import agents to register them in the agent registry
+    await import('./agents');
 
     console.log('--- STARTING AI INFRASTRUCTURE ---');
     

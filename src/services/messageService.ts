@@ -54,6 +54,9 @@ export const messageService = {
     }
 
     // 3. Perform the insert
+    if (!conversation) {
+      throw new Error('Failed to get or create conversation.');
+    }
     const { data, error } = await supabase
       .from('messages')
       .insert([

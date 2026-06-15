@@ -50,7 +50,14 @@ export class BrowserAgent implements IAgent {
         .single();
 
       const screenshotUrl = snapshot?.screenshot_url || `https://placehold.co/1280x720?text=No+Screenshot+Available`;
-      const perception = await visionService.analyzeScreenshot(screenshotUrl, goal);
+      const perceptionResult = await visionService.analyzeScreenshot(screenshotUrl, goal);
+      
+      let perception: any;
+      if (typeof perceptionResult === 'string') {
+        perception = { page_summary: perceptionResult, interactive_elements: [] };
+      } else {
+        perception = perceptionResult;
+      }
 
       await orchestratorService.logStep(runId, this.name, 'observation', `Perception: ${perception.page_summary}`, null, perception);
 

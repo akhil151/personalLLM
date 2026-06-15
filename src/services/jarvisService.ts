@@ -3,6 +3,13 @@ import { llmService } from './llmService';
 import { ExecutiveBriefSchema } from '../types/schemas';
 import { priorityEngine } from './priorityEngine';
 import { blockerDetectionService } from './blockerDetectionService';
+import { goalManagerService } from './goalManagerService';
+import { projectStateService } from './projectStateService';
+import { userIntelligenceService } from './userIntelligenceService';
+import { personalContextService } from './personalContextService';
+import { personalRecommendationService } from './personalRecommendationService';
+import { behaviorAnalyzer } from './behaviorAnalyzer';
+import { dbService } from './dbService';
 
 /**
  * JarvisService handles the executive intelligence layer, providing briefings and summaries.
@@ -86,5 +93,81 @@ Generate the executive brief V2.`;
 
     if (error) throw error;
     return data;
-  }
+  },
+
+  /**
+   * Gets the current Jarvis state
+   */
+  async getState(userId?: string) {
+    const supabase = createAdminClient();
+    if (!userId) {
+      // If no userId, try to get from auth or return default state
+      return {
+        last_session_summary: 'No recent activity',
+      };
+    }
+
+    // Get some basic state
+    const [goals, projects] = await Promise.all([
+      goalManagerService.getActiveGoals(userId),
+      projectStateService.getActiveProjects(userId),
+    ]);
+
+    return {
+      last_session_summary: `You have ${goals.length} active goals and ${projects.length} active projects.`,
+    };
+  },
+
+  /**
+   * Updates Jarvis state
+   */
+  async updateState(updates: any) {
+    // In a real implementation, this would save to the database
+    return { success: true };
+  },
+
+  /**
+   * Routes and executes natural language commands
+   */
+  async routeCommand(command: string, userId?: string) {
+    if (!userId) {
+      return {
+        type: 'success',
+        message: 'Command received, but user not authenticated.',
+      };
+    }
+
+    try {
+      // Use the existing dbService to initiate an autonomous run
+      const result = await dbService.initiateAutonomousRun(userId, command);
+      
+      if (!result.success) {
+        return {
+          type: 'error',
+          message: result.error || 'Failed to execute command.',
+        };
+      }
+
+      // Fetch the steps to get a summary
+      const { data: steps } = await createAdminClient()
+        .from('execution_steps')
+        .select('*')
+        .eq('run_id', result.runId)
+        .order('created_at', { ascending: true });
+
+      // Generate a summary response
+      const stepSummary = steps?.map((step: any) => step.content).join('\n') || 'Command executed successfully.';
+      
+      return {
+        type: 'success',
+        message: `Command executed. Run ID: ${result.runId ? result.runId.slice(0, 8) + '...' : 'Unknown'}\n\n${stepSummary}`,
+      };
+    } catch (error: any) {
+      console.error('Jarvis routeCommand error:', error);
+      return {
+        type: 'error',
+        message: error.message || 'An error occurred while executing your command.',
+      };
+    }
+  },
 };
