@@ -31,16 +31,16 @@ export async function POST(req: Request) {
       return new Response(JSON.stringify({ error: result.error }), { status: 500 });
     }
 
-    // 3. GENERATE FINAL RESPONSE BASED ON AGENT RUN
-    const { data: steps } = await supabase
-      .from('execution_steps')
+    // 3. GENERATE FINAL RESPONSE BASED ON AGENT RUN (using agent_tasks as source of truth)
+    const { data: agentTasks } = await supabase
+      .from('agent_tasks')
       .select('*')
       .eq('run_id', result.runId)
-      .order('created_at', { ascending: true });
+      .order('priority', { ascending: true });
 
     const summaryPrompt = `The following agents just completed a multi-step task for the user.
     Goal: ${lastMessage}
-    Execution Steps: ${JSON.stringify(steps)}
+    Agent Tasks: ${JSON.stringify(agentTasks)}
     
     Provide a final, helpful response to the user summarizing the outcome and any actions taken.`;
 

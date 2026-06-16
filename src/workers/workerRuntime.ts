@@ -7,6 +7,7 @@ import { reflectionEngine } from '@/reflection/reflectionEngine';
 import { memoryService } from '@/services/memory/memoryService';
 import { safetyGuard } from '@/safety/safetyGuard';
 import { observabilityService } from '@/services/observability/observabilityService';
+import { recoveryService, schedulerService } from '@/scheduler/schedulerService';
 
 /**
  * WorkerRuntime is the distributed execution engine.
@@ -18,10 +19,18 @@ export const workerRuntime = {
   async start() {
     if (this.isRunning) return;
     this.isRunning = true;
-    console.log(`[WORKER] Worker Runtime Started (${this.workerId}).`);
+    console.log(`[WORKER] Worker Runtime Started (${this.workerId})`);
+
+    // Step 1: Run recovery on startup
+    console.log('[WORKER] Running startup recovery...');
+    await recoveryService.recoverIncompleteWorkflows(this.workerId);
+    console.log('[WORKER] Startup recovery complete');
 
     while (this.isRunning) {
       try {
+        // Process both jobs and schedules
+        await schedulerService.processSchedules(this.workerId);
+        
         const job = await jobQueue.getNextJob(this.workerId);
         if (job) {
           await observabilityService.logWorkerEvent('job_started', job.id, { type: job.job_type, workerId: this.workerId });
@@ -88,6 +97,9 @@ export const workerRuntime = {
         break;
       case 'embedding_generation':
         await this.handleEmbeddingGeneration(job.payload);
+        break;
+      case 'schedule_workflow':
+        await this.handleScheduleWorkflow(job.payload);
         break;
       default:
         console.warn(`[WORKER] Unknown job type: ${job.job_type}`);
@@ -170,5 +182,31 @@ export const workerRuntime = {
     const { messageId, conversationId, userId, content } = payload;
     console.log(`[WORKER] Generating embedding for message ${messageId}`);
     await memoryService.storeMessageEmbedding(messageId, conversationId, userId, content);
+  },
+
+  /**
+   * Handle starting a scheduled workflow
+   */
+  async handleScheduleWorkflow(payload: any) {
+    const { scheduleId, workflowType, payload: schedulePayload } = payload;
+    console.log(`[WORKER] Starting scheduled workflow for schedule ${scheduleId}`);
+    
+    // Start workflow via executionPipeline (same as chat)
+    const { executionPipeline } = await import('@/orchestrator/executionPipeline');
+    
+    // Get user_id from schedule first
+    const supabase = createAdminClient();
+    const { data: schedule } = await supabase
+      .from('autonomous_schedules')
+      .select('*')
+      .eq('id', scheduleId)
+      .single();
+
+    if (!schedule) {
+      throw new Error(`Schedule ${scheduleId} not found`);
+    }
+
+    await executionPipeline.run(schedule.user_id, '', schedulePayload.goal || 'Scheduled workflow');
+    console.log(`[WORKER] Scheduled workflow ${scheduleId} started`);
   }
 };

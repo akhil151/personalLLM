@@ -18,4 +18,5 @@ export interface LLMProvider {
   stream(messages: LLMMessage[], options?: any): AsyncIterable<string>;
   embed(text: string): Promise<number[]>;
   vision(messages: LLMMessage[], imageUrl: string, options?: any): Promise<LLMResponse>;
+  supportsVision(): Promise<boolean>;
 }

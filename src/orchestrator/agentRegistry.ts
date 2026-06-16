@@ -13,6 +13,10 @@ export interface AgentOutput {
   data: any;
   error?: string;
   nextStep?: string;
+  source: 'llm' | 'fallback' | 'error';
+  fallback_used: boolean;
+  model_used?: string;
+  execution_time: number;
 }
 
 export interface IAgent {

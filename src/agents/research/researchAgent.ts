@@ -26,25 +26,37 @@ export class ResearchAgent implements IAgent {
   role = 'research' as const;
 
   async execute(input: AgentInput): Promise<AgentOutput> {
+    const startTime = Date.now();
     const { runId, data } = input;
     const { topic, context } = data;
 
+    if (!topic) {
+      return {
+        success: false,
+        data: null,
+        error: 'Research Agent: Missing "topic" in input data.',
+        source: 'error',
+        fallback_used: false,
+        execution_time: Date.now() - startTime
+      };
+    }
+
     await orchestratorService.logStep(runId, this.name, 'thought', `Synthesizing research for topic: "${topic}"`);
 
-    const systemPrompt = `You are a Senior Research AI. Your goal is to provide a comprehensive, 
-    fact-checked report on a given topic based on the provided context.
-    
-    Structure your response as a JSON object:
-    {
-      "summary": "High-level overview",
-      "findings": [
-        { "point": "...", "source": "...", "confidence": 0.0-1.0 }
-      ],
-      "gaps": ["what information is still missing"],
-      "recommendations": ["next steps for the user"]
-    }`;
-
     try {
+      const systemPrompt = `You are a Senior Research AI. Your goal is to provide a comprehensive, 
+      fact-checked report on a given topic based on the provided context.
+      
+      Structure your response as a JSON object:
+      {
+        "summary": "High-level overview",
+        "findings": [
+          { "point": "...", "source": "...", "confidence": 0.0-1.0 }
+        ],
+        "gaps": ["what information is still missing"],
+        "recommendations": ["next steps for the user"]
+      }`;
+
       const result = await llmService.getStructuredOutput([
         { role: 'system', content: systemPrompt },
         { role: 'user', content: `Topic: ${topic}\nContext: ${JSON.stringify(context)}` }
@@ -63,20 +75,21 @@ export class ResearchAgent implements IAgent {
 
       return {
         success: true,
-        data: result
+        data: result,
+        source: 'llm',
+        fallback_used: false,
+        execution_time: Date.now() - startTime
       };
 
     } catch (error: any) {
-      console.warn(`[RESEARCH] LLM Research failed, entering LEVEL 3 DETERMINISTIC FALLBACK: ${error.message}`);
-      const fallbackResult = {
-        summary: "Research synthesis unavailable.",
-        findings: [{ point: `Topic: ${topic}`, source: "System Log", confidence: 0.5 }],
-        gaps: ["LLM provider failure prevented deep synthesis"],
-        recommendations: ["Check logs for provider errors"]
-      };
+      console.warn(`[RESEARCH] Research failed: ${error.message}`);
       return {
-        success: true,
-        data: fallbackResult
+        success: false,
+        data: null,
+        error: error.message,
+        source: 'error',
+        fallback_used: false,
+        execution_time: Date.now() - startTime
       };
     }
   }

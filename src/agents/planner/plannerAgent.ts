@@ -28,10 +28,18 @@ export class PlannerAgent implements IAgent {
   role = 'planner' as const;
 
   async execute(input: AgentInput): Promise<AgentOutput> {
+    const startTime = Date.now();
     const { runId, data } = input;
     
     if (!data || !data.goal) {
-      throw new Error('Planner Agent: Missing "goal" in input data.');
+      return {
+        success: false,
+        data: null,
+        error: 'Planner Agent: Missing "goal" in input data.',
+        source: 'error',
+        fallback_used: false,
+        execution_time: Date.now() - startTime
+      };
     }
     
     const { goal } = data;
@@ -65,7 +73,7 @@ export class PlannerAgent implements IAgent {
         { role: 'user', content: `Goal: ${goal}` }
       ], PlannerSchema);
 
-      return await this.finalizePlan(runId, goal, result.tasks);
+      return await this.finalizePlan(runId, goal, result.tasks, startTime, 'llm', false);
 
     } catch (error: any) {
       console.warn(`[PLANNER] LLM Planning failed, entering LEVEL 3 DETERMINISTIC FALLBACK: ${error.message}`);
@@ -96,11 +104,11 @@ export class PlannerAgent implements IAgent {
         });
       }
 
-      return await this.finalizePlan(runId, goal, fallbackTasks);
+      return await this.finalizePlan(runId, goal, fallbackTasks, startTime, 'fallback', true);
     }
   }
 
-  private async finalizePlan(runId: string, goal: string, tasks: any[]): Promise<AgentOutput> {
+  private async finalizePlan(runId: string, goal: string, tasks: any[], startTime: number, source: 'llm' | 'fallback', fallback_used: boolean): Promise<AgentOutput> {
     // PHASE Z.3.5: Enforce Critic Agent review for high-complexity tasks
     const needsCritic = goal.toLowerCase().includes('research') || 
                         goal.toLowerCase().includes('report') || 
@@ -133,7 +141,16 @@ export class PlannerAgent implements IAgent {
       .insert(tasksToInsert)
       .select();
 
-    if (error) throw error;
+    if (error) {
+      return {
+        success: false,
+        data: null,
+        error: `Failed to save tasks: ${error.message}`,
+        source: 'error',
+        fallback_used,
+        execution_time: Date.now() - startTime
+      };
+    }
 
     await orchestratorService.logStep(runId, this.name, 'observation', `Generated ${savedTasks.length} tasks.`);
 
@@ -149,7 +166,10 @@ export class PlannerAgent implements IAgent {
 
     return {
       success: true,
-      data: { tasks: savedTasks }
+      data: { tasks: savedTasks },
+      source,
+      fallback_used,
+      execution_time: Date.now() - startTime
     };
   }
 }

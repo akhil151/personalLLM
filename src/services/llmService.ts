@@ -18,6 +18,18 @@ function isZodSchema(schema: any): schema is ZodSchema {
  * Now provider-agnostic. Supports OpenAI, Gemini, and OpenRouter with fallback.
  */
 export const llmService = {
+  async supportsImageInput(): Promise<boolean> {
+    if (process.env.USE_MOCK_LLM === 'true') {
+      return true;
+    }
+    try {
+      await providerRouter.supportsVision();
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
   /**
    * Returns the AI SDK provider instance with routed model.
    */

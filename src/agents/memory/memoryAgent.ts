@@ -18,6 +18,7 @@ export class MemoryAgent implements IAgent {
   role = 'memory' as const;
 
   async execute(input: AgentInput): Promise<AgentOutput> {
+    const startTime = Date.now();
     const { runId, userId, data, cos_context } = input;
     
     // Ensure we always have task and goal
@@ -67,7 +68,10 @@ export class MemoryAgent implements IAgent {
 
         return {
           success: true,
-          data: { stored: true, messageId: msg?.id }
+          data: { stored: true, messageId: msg?.id },
+          source: 'llm',
+          fallback_used: false,
+          execution_time: Date.now() - startTime
         };
       }
 
@@ -85,14 +89,20 @@ export class MemoryAgent implements IAgent {
         data: {
           context: contextString,
           memories: relevantMemories
-        }
+        },
+        source: 'llm',
+        fallback_used: false,
+        execution_time: Date.now() - startTime
       };
 
     } catch (error: any) {
       return {
         success: false,
         data: null,
-        error: error.message
+        error: error.message,
+        source: 'error',
+        fallback_used: false,
+        execution_time: Date.now() - startTime
       };
     }
   }

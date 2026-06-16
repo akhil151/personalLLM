@@ -50,8 +50,24 @@ export class GroqProvider implements LLMProvider {
     throw new Error('Groq does not support embeddings.');
   }
 
-  async vision(messages: LLMMessage[], _imageUrl: string, options?: any): Promise<LLMResponse> {
-    // Groq has some vision models but let's stick to the requested model
-    return this.generate(messages, options);
+  async vision(messages: LLMMessage[], imageUrl: string, options?: any): Promise<LLMResponse> {
+    const visionMessages = messages.map(msg => {
+      if (msg.role === 'user' && imageUrl) {
+        return {
+          role: 'user',
+          content: [
+            { type: 'text', text: msg.content },
+            { type: 'image_url', image_url: { url: imageUrl } }
+          ]
+        };
+      }
+      return msg;
+    }) as any;
+
+    return this.generate(visionMessages, { ...options, model: 'llama-3.2-90b-vision-preview' });
+  }
+
+  async supportsVision(): Promise<boolean> {
+    return !!process.env.GROQ_API_KEY;
   }
 }

@@ -149,8 +149,30 @@ totalMs: ${totalMs}`);
     return data.embedding;
   }
 
-  async vision(messages: LLMMessage[], _imageUrl: string, options?: any): Promise<LLMResponse> {
-    // Ollama supports vision with models like llava, but for now we'll just try to generate
-    return this.generate(messages, options);
+  async vision(messages: LLMMessage[], imageUrl: string, options?: any): Promise<LLMResponse> {
+    const visionMessages = messages.map(msg => {
+      if (msg.role === 'user' && imageUrl) {
+        return {
+          role: 'user',
+          content: [
+            { type: 'text', text: msg.content },
+            { type: 'image_url', image_url: { url: imageUrl } }
+          ]
+        };
+      }
+      return msg;
+    }) as any;
+
+    return this.generate(visionMessages, options);
+  }
+
+  async supportsVision(): Promise<boolean> {
+    try {
+      const visionModels = ['llava', 'qwen-vl', 'llava-phi', 'moondream'];
+      const model = process.env.OLLAMA_MODEL?.toLowerCase() || '';
+      return visionModels.some(vm => model.includes(vm));
+    } catch {
+      return false;
+    }
   }
 }

@@ -26,7 +26,8 @@ export class ExecutorAgent implements IAgent {
   private dangerousActions = ['schedule_task', 'delete_data', 'query_db', 'mcp_filesystem_write_file'];
 
   async execute(input: AgentInput): Promise<AgentOutput> {
-    const { runId, data, cos_context } = input;
+    const startTime = Date.now();
+    const { runId, data, cos_context, userId } = input;
     
     // Ensure we always have a task and goal
     let task = data?.task;
@@ -48,31 +49,31 @@ export class ExecutorAgent implements IAgent {
 
     await orchestratorService.logStep(runId, this.name, 'thought', `Analyzing task: "${task.title}" for tool selection.`);
 
-    // 1. Fetch available MCP tools and merge with local tools
-    const mcpTools = await mcpService.listTools();
-    const allTools = [
-      ...tools, 
-      ...mcpTools.map(t => ({ 
-        type: 'function', 
-        function: { 
-          name: `mcp_${t.server}_${t.name}`, 
-          description: `MCP Tool from ${t.server}: ${t.name}` 
-        } 
-      }))
-    ];
-
-    const systemPrompt = `You are an Autonomous Executor Agent.
-    Choose the best tool for the task. Use 'mcp_' tools for system-level actions (filesystem, github, db).
-    
-    GOAL: ${goal}
-    CONTEXT: ${context}
-    TASK: ${task.title}
-
-    Available Tools: ${JSON.stringify(allTools)}
-
-    Return JSON: { "tool": "name", "args": {}, "reasoning": "..." }`;
-
     try {
+      // 1. Fetch available MCP tools and merge with local tools
+      const mcpTools = await mcpService.listTools();
+      const allTools = [
+        ...tools, 
+        ...mcpTools.map(t => ({ 
+          type: 'function', 
+          function: { 
+            name: `mcp_${t.server}_${t.name}`, 
+            description: `MCP Tool from ${t.server}: ${t.name}` 
+          } 
+        }))
+      ];
+
+      const systemPrompt = `You are an Autonomous Executor Agent.
+      Choose the best tool for the task. Use 'mcp_' tools for system-level actions (filesystem, github, db).
+      
+      GOAL: ${goal}
+      CONTEXT: ${context}
+      TASK: ${task.title}
+
+      Available Tools: ${JSON.stringify(allTools)}
+
+      Return JSON: { "tool": "name", "args": {}, "reasoning": "..." }`;
+
       const decision = await llmService.getStructuredOutput([
         { role: 'system', content: systemPrompt },
         { role: 'user', content: `Execute: ${task.title}` }
@@ -89,9 +90,11 @@ export class ExecutorAgent implements IAgent {
           .from('collaboration_requests')
           .insert([{
             run_id: runId,
+            task_id: task.id,
+            user_id: userId,
             agent_name: this.name,
             request_type: 'approval',
-            payload: { tool: decision.tool, args: decision.args },
+            payload: { tool: decision.tool, args: decision.args, taskId: task.id },
             status: 'pending'
           }])
           .select().single();
@@ -100,7 +103,10 @@ export class ExecutorAgent implements IAgent {
           success: false,
           data: { approvalId: approval?.id },
           error: 'Waiting for human approval.',
-          nextStep: 'wait_for_approval'
+          nextStep: 'wait_for_approval',
+          source: 'error',
+          fallback_used: false,
+          execution_time: Date.now() - startTime
         };
       }
 
@@ -119,18 +125,24 @@ export class ExecutorAgent implements IAgent {
 
       await orchestratorService.logStep(runId, this.name, 'observation', `Executed ${decision.tool}`, null, result);
 
-      return { success: true, data: result };
+      return { 
+        success: true, 
+        data: result,
+        source: 'llm',
+        fallback_used: false,
+        execution_time: Date.now() - startTime
+      };
 
     } catch (error: any) {
-      console.warn(`[EXECUTOR] LLM Execution failed, entering LEVEL 3 DETERMINISTIC FALLBACK: ${error.message}`);
-      await orchestratorService.logStep(runId, this.name, 'error', `Failed: ${error.message}. Fallback applied.`);
+      console.warn(`[EXECUTOR] Execution failed: ${error.message}`);
+      await orchestratorService.logStep(runId, this.name, 'error', `Failed: ${error.message}`);
       return {
-        success: true,
-        data: {
-          action_taken: "Deterministic execution fallback",
-          result_summary: `The task "${task.title}" was processed using deterministic logic as AI providers were unavailable.`,
-          confidence_score: 0.5
-        }
+        success: false,
+        data: null,
+        error: error.message,
+        source: 'error',
+        fallback_used: false,
+        execution_time: Date.now() - startTime
       };
     }
   }

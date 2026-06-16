@@ -22,23 +22,46 @@ export class CriticAgent implements IAgent {
   role = 'critic' as const;
 
   async execute(input: AgentInput): Promise<AgentOutput> {
+    const startTime = Date.now();
     const { runId, data } = input;
     const { action_to_review, output_to_review } = data;
 
+    // Validate inputs
+    if (!action_to_review) {
+      return {
+        success: false,
+        data: null,
+        error: 'Critic Agent: Missing "action_to_review" in input data.',
+        source: 'error',
+        fallback_used: false,
+        execution_time: Date.now() - startTime
+      };
+    }
+    if (!output_to_review) {
+      return {
+        success: false,
+        data: null,
+        error: 'Critic Agent: Missing "output_to_review" in input data.',
+        source: 'error',
+        fallback_used: false,
+        execution_time: Date.now() - startTime
+      };
+    }
+
     await orchestratorService.logStep(runId, this.name, 'thought', `Reviewing output for potential issues.`);
 
-    const systemPrompt = `You are an AI Quality & Safety Critic. 
-    Evaluate the provided agent output for accuracy, safety, and goal alignment.
-    
-    Structure your response as a JSON object:
-    {
-      "verdict": "pass|fail|needs_revision",
-      "score": 0-100,
-      "concerns": ["list of issues found"],
-      "suggestions": ["how to improve the output"]
-    }`;
-
     try {
+      const systemPrompt = `You are an AI Quality & Safety Critic. 
+      Evaluate the provided agent output for accuracy, safety, and goal alignment.
+      
+      Structure your response as a JSON object:
+      {
+        "verdict": "pass|fail|needs_revision",
+        "score": 0-100,
+        "concerns": ["list of issues found"],
+        "suggestions": ["how to improve the output"]
+      }`;
+
       const result = await llmService.getStructuredOutput([
         { role: 'system', content: systemPrompt },
         { role: 'user', content: `Action: ${JSON.stringify(action_to_review)}\nOutput: ${JSON.stringify(output_to_review)}` }
@@ -57,20 +80,21 @@ export class CriticAgent implements IAgent {
 
       return {
         success: true,
-        data: result
+        data: result,
+        source: 'llm',
+        fallback_used: false,
+        execution_time: Date.now() - startTime
       };
 
     } catch (error: any) {
-      console.warn(`[CRITIC] LLM Review failed, entering LEVEL 3 DETERMINISTIC FALLBACK: ${error.message}`);
-      const fallbackResult = {
-        verdict: 'pass' as const,
-        score: 50,
-        concerns: ["System-level critic fallback active"],
-        suggestions: ["Perform manual review if quality is critical"]
-      };
+      console.warn(`[CRITIC] Review failed: ${error.message}`);
       return {
-        success: true,
-        data: fallbackResult
+        success: false,
+        data: null,
+        error: error.message,
+        source: 'error',
+        fallback_used: false,
+        execution_time: Date.now() - startTime
       };
     }
   }

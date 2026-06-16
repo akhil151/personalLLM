@@ -206,7 +206,45 @@ export class ProviderRouter {
   }
 
   async vision(messages: LLMMessage[], imageUrl: string, options?: any): Promise<LLMResponse> {
-    return this.generate('vision', messages, { ...options, imageUrl });
+    const primary = this.getModelForTask('vision');
+    const order = [primary.provider, ...this.fallbackOrder.filter(p => p !== primary.provider)];
+
+    let lastError: any;
+    for (const providerName of order) {
+      if (!this.isAvailable(providerName)) {
+        continue;
+      }
+
+      const provider = this.getProvider(providerName);
+      if (!provider) continue;
+
+      try {
+        const result = await provider.vision(messages, imageUrl, options);
+        const health = this.providerHealth.get(providerName);
+        if (health) health.consecutiveFailures = 0;
+        return result;
+      } catch (err: any) {
+        console.warn(`[ROUTER] Vision with ${providerName} failed: ${err.message}`);
+        this.markFailure(providerName, err);
+        lastError = err;
+      }
+    }
+    throw new Error(`All providers failed for vision task. Last error: ${lastError?.message}`);
+  }
+
+  async supportsVision(): Promise<boolean> {
+    const order = ['ollama', ...this.fallbackOrder];
+    for (const name of order) {
+      const provider = this.getProvider(name);
+      if (!provider) continue;
+      try {
+        const supports = await provider.supportsVision();
+        if (supports) return true;
+      } catch {
+        continue;
+      }
+    }
+    return false;
   }
 }
 

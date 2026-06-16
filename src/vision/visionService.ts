@@ -16,6 +16,11 @@ export const visionService = {
   async analyzeScreenshot(imageUrl: string, goal: string) {
     console.log(`Analyzing screenshot: ${imageUrl}`);
 
+    const hasVision = await llmService.supportsImageInput();
+    if (!hasVision) {
+      throw new Error('Vision capability not available. No provider supports image input.');
+    }
+
     const systemPrompt = `You are a Multimodal UI Specialist.
     Analyze the provided screenshot of a web browser.
     GOAL: ${goal}
@@ -46,7 +51,7 @@ export const visionService = {
 
     } catch (err) {
       console.error('Vision Analysis Error:', err);
-      return { page_summary: 'Failed to analyze screenshot visually.', interactive_elements: [] };
+      throw err;
     }
   }
 };
