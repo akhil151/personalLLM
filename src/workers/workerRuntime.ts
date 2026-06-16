@@ -8,6 +8,17 @@ import { memoryService } from '@/services/memory/memoryService';
 import { safetyGuard } from '@/safety/safetyGuard';
 import { observabilityService } from '@/services/observability/observabilityService';
 import { recoveryService, schedulerService } from '@/scheduler/schedulerService';
+import { browserSessionManager } from '@/browser/browserSessionManager';
+
+/**
+ * Resource limits configuration
+ */
+export const RESOURCE_LIMITS = {
+  MAX_CONCURRENT_WORKFLOWS: 10,
+  MAX_CONCURRENT_BROWSER_SESSIONS: 5,
+  MAX_QUEUED_TASKS: 100,
+  MEMORY_THRESHOLD_MB: 2048
+};
 
 /**
  * WorkerRuntime is the distributed execution engine.
@@ -15,26 +26,52 @@ import { recoveryService, schedulerService } from '@/scheduler/schedulerService'
 export const workerRuntime = {
   isRunning: false,
   workerId: `worker-${Math.random().toString(36).substring(2, 9)}`,
+  activeJobs: new Set(),
+  shutdownInProgress: false,
 
   async start() {
     if (this.isRunning) return;
     this.isRunning = true;
+    this.shutdownInProgress = false;
     console.log(`[WORKER] Worker Runtime Started (${this.workerId})`);
 
-    // Step 1: Run recovery on startup
+    // Step 1: Register graceful shutdown handlers
+    this.registerShutdownHandlers();
+
+    // Step 2: Run recovery on startup
     console.log('[WORKER] Running startup recovery...');
     await recoveryService.recoverIncompleteWorkflows(this.workerId);
     console.log('[WORKER] Startup recovery complete');
 
     while (this.isRunning) {
       try {
+        if (this.shutdownInProgress) {
+          console.log('[WORKER] Shutdown in progress, waiting for active jobs to complete...');
+          if (this.activeJobs.size === 0) {
+            console.log('[WORKER] No active jobs, shutting down');
+            break;
+          }
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          continue;
+        }
+
+        // Check resource limits before taking new jobs
+        const canTakeJob = await this.checkResourceLimits();
+        if (!canTakeJob) {
+          console.log('[WORKER] Resource limits reached, waiting...');
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          continue;
+        }
+
         // Process both jobs and schedules
         await schedulerService.processSchedules(this.workerId);
         
         const job = await jobQueue.getNextJob(this.workerId);
         if (job) {
+          this.activeJobs.add(job.id);
           await observabilityService.logWorkerEvent('job_started', job.id, { type: job.job_type, workerId: this.workerId });
           await this.processJob(job);
+          this.activeJobs.delete(job.id);
           await observabilityService.logWorkerEvent('job_completed', job.id);
         } else {
           // No job found, wait 3s
@@ -45,10 +82,94 @@ export const workerRuntime = {
         await new Promise(resolve => setTimeout(resolve, 5000));
       }
     }
+
+    console.log('[WORKER] Worker stopped');
+  },
+
+  registerShutdownHandlers() {
+    if (typeof process !== 'undefined') {
+      process.on('SIGTERM', () => this.handleShutdown('SIGTERM'));
+      process.on('SIGINT', () => this.handleShutdown('SIGINT'));
+    }
+  },
+
+  async handleShutdown(signal: string) {
+    if (this.shutdownInProgress) return;
+    console.log(`[WORKER] Received ${signal}, initiating graceful shutdown...`);
+    this.shutdownInProgress = true;
+
+    // 1. Close all active browser sessions
+    const supabase = createAdminClient();
+    const { data: activeSessions } = await supabase
+      .from('browser_sessions')
+      .select('*')
+      .eq('status', 'active');
+    if (activeSessions) {
+      console.log(`[WORKER] Closing ${activeSessions.length} active browser sessions...`);
+      for (const session of activeSessions) {
+        await browserSessionManager.closeSession(session.id);
+      }
+    }
+
+    // 2. Wait for active jobs to complete (up to 30 seconds)
+    const shutdownStart = Date.now();
+    while (this.activeJobs.size > 0 && Date.now() - shutdownStart < 30000) {
+      console.log(`[WORKER] Waiting for ${this.activeJobs.size} active jobs...`);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+
+    // 3. Stop the worker
+    this.isRunning = false;
+    console.log('[WORKER] Graceful shutdown complete');
   },
 
   async stop() {
-    this.isRunning = false;
+    await this.handleShutdown('MANUAL');
+  },
+
+  async checkResourceLimits(): Promise<boolean> {
+    const supabase = createAdminClient();
+
+    // 1. Check concurrent workflows
+    const { count: runningWorkflows } = await supabase
+      .from('agent_runs')
+      .select('*', { count: 'exact', head: true })
+      .in('status', ['running', 'in_progress']);
+    if (runningWorkflows && runningWorkflows >= RESOURCE_LIMITS.MAX_CONCURRENT_WORKFLOWS) {
+      console.log(`[WORKER] Max concurrent workflows reached: ${RESOURCE_LIMITS.MAX_CONCURRENT_WORKFLOWS}`);
+      return false;
+    }
+
+    // 2. Check concurrent browser sessions
+    const { count: activeSessions } = await supabase
+      .from('browser_sessions')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'active');
+    if (activeSessions && activeSessions >= RESOURCE_LIMITS.MAX_CONCURRENT_BROWSER_SESSIONS) {
+      console.log(`[WORKER] Max concurrent browser sessions reached: ${RESOURCE_LIMITS.MAX_CONCURRENT_BROWSER_SESSIONS}`);
+      return false;
+    }
+
+    // 3. Check queued tasks
+    const { count: queuedTasks } = await supabase
+      .from('background_jobs')
+      .select('*', { count: 'exact', head: true })
+      .in('status', ['pending', 'retrying']);
+    if (queuedTasks && queuedTasks >= RESOURCE_LIMITS.MAX_QUEUED_TASKS) {
+      console.log(`[WORKER] Max queued tasks reached: ${RESOURCE_LIMITS.MAX_QUEUED_TASKS}`);
+      return false;
+    }
+
+    // 4. Check memory usage (if available)
+    if (typeof process !== 'undefined' && process.memoryUsage) {
+      const usedMB = process.memoryUsage().heapUsed / 1024 / 1024;
+      if (usedMB > RESOURCE_LIMITS.MEMORY_THRESHOLD_MB) {
+        console.log(`[WORKER] Memory threshold exceeded: ${usedMB.toFixed(0)}MB > ${RESOURCE_LIMITS.MEMORY_THRESHOLD_MB}MB`);
+        return false;
+      }
+    }
+
+    return true;
   },
 
   async processJob(job: any) {

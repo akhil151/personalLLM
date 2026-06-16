@@ -4,6 +4,7 @@ import { eventBus } from '@/events/eventBus';
 import { jobQueue } from '@/queue/jobQueue';
 
 const LEASE_DURATION_MS = 60000; // 1 minute lease
+const SCHEDULER_HEARTBEAT_TABLE = 'scheduler_heartbeats';
 
 /**
  * SchedulerService enables proactive autonomous behavior.
@@ -45,6 +46,58 @@ export const schedulerService = {
   },
 
   /**
+   * Record a scheduler heartbeat to indicate scheduler is active
+   */
+  async recordHeartbeat(workerId: string) {
+    const supabase = createAdminClient();
+    try {
+      await supabase.from(SCHEDULER_HEARTBEAT_TABLE).upsert({
+        worker_id: workerId,
+        last_heartbeat: new Date().toISOString()
+      }, {
+        onConflict: 'worker_id'
+      });
+    } catch (error) {
+      console.error(`[SCHEDULER] Failed to record heartbeat:`, error);
+    }
+  },
+
+  /**
+   * Check scheduler health - returns true if any worker has recorded a heartbeat in last 5 minutes
+   */
+  async checkHealth(): Promise<{ healthy: boolean; lastHeartbeat?: string; message: string }> {
+    const supabase = createAdminClient();
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+
+    try {
+      const { data: heartbeats } = await supabase
+        .from(SCHEDULER_HEARTBEAT_TABLE)
+        .select('*')
+        .gte('last_heartbeat', fiveMinutesAgo)
+        .order('last_heartbeat', { ascending: false })
+        .limit(1);
+
+      if (heartbeats && heartbeats.length > 0) {
+        return {
+          healthy: true,
+          lastHeartbeat: heartbeats[0].last_heartbeat,
+          message: 'Scheduler is active'
+        };
+      } else {
+        return {
+          healthy: false,
+          message: 'No scheduler heartbeat in last 5 minutes - scheduler may be inactive'
+        };
+      }
+    } catch (error) {
+      return {
+        healthy: false,
+        message: `Scheduler health check failed: ${String(error)}`
+      };
+    }
+  },
+
+  /**
    * Scans for due tasks and executes them.
    * Uses atomic lease-based claiming to ensure a task is only started once.
    */
@@ -52,6 +105,9 @@ export const schedulerService = {
     const supabase = createAdminClient();
     const now = new Date().toISOString();
     const leaseExpiresAt = new Date(Date.now() + LEASE_DURATION_MS).toISOString();
+
+    // Record heartbeat
+    await this.recordHeartbeat(workerId);
 
     console.log(`[SCHEDULER] Worker ${workerId} scanning for due schedules at ${now}`);
 
