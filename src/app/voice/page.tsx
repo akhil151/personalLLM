@@ -10,15 +10,16 @@ import { Mic, StopCircle, Volume2, VolumeX, MessageSquare } from 'lucide-react';
 
 export default function VoicePage() {
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
   const [isVoiceActive, setIsVoiceActive] = useState(false);
   const supabase = createClient();
-  const { isListening, isSpeaking, startListening, stopListening, speak, stopSpeaking } = useVoice();
   
-  // Initialize conversation
+  // Initialize conversation and user
   useEffect(() => {
     async function initConversation() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
+      setUserId(user.id);
       
       const { data: conversations } = await supabase
         .from('conversations')
@@ -41,6 +42,18 @@ export default function VoicePage() {
     initConversation();
   }, [supabase]);
 
+  const { 
+    isListening, 
+    isSpeaking, 
+    error,
+    startListening, 
+    stopListening, 
+    speak, 
+    stopSpeaking, 
+    emitRequestSent,
+    emitResponseReceived
+  } = useVoice({ userId, conversationId });
+
   const { messages, sendMessage, status } = useChat({
     transport: conversationId ? new DefaultChatTransport({
       api: '/api/chat',
@@ -53,15 +66,17 @@ export default function VoicePage() {
         const parts = lastMessage?.parts || [];
         const text = parts.filter((p: any) => p.type === 'text').map((p: any) => p.text).join(' ');
         if (text) {
+          emitResponseReceived(text);
           speak(text, () => setIsVoiceActive(false));
         }
       }
-    }
+    },
   });
 
   const handleVoiceResult = (text: string) => {
     if (!conversationId) return;
     setIsVoiceActive(true);
+    emitRequestSent(text);
     sendMessage({ text });
   };
 
@@ -77,7 +92,7 @@ export default function VoicePage() {
       <div className="max-w-2xl w-full space-y-8">
         <div className="text-center space-y-2">
           <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
-            Jarvis Voice Assistant
+            Tim Voice Assistant
           </h1>
           <p className="text-zinc-400">
             Talk to your AI assistant naturally
@@ -87,6 +102,12 @@ export default function VoicePage() {
         {/* Status Display */}
         <div className="bg-zinc-800/50 backdrop-blur-sm rounded-3xl p-8 border border-zinc-700 shadow-xl">
           <div className="flex flex-col items-center space-y-6">
+            {/* Error Message */}
+            {error && (
+              <div className="w-full p-4 bg-red-900/30 border border-red-500 rounded-xl text-center">
+                <p className="text-red-200 text-sm">{error}</p>
+              </div>
+            )}
             {/* Status Text */}
             <div className="text-center space-y-2">
               <h2 className="text-2xl font-semibold text-zinc-200">
@@ -95,9 +116,9 @@ export default function VoicePage() {
                  isLoading ? 'Thinking...' : 'Ready'}
               </h2>
               <p className="text-zinc-400">
-                {isListening ? 'Keep talking...' : 
+                {isListening ? 'Speak now...' : 
                  isSpeaking ? 'Tap to stop' : 
-                 'Hold the mic to start'}
+                 'Click the mic to start'}
               </p>
             </div>
 
@@ -107,27 +128,22 @@ export default function VoicePage() {
               isSpeaking ? 'bg-blue-500/20 animate-pulse' : 
               isLoading ? 'bg-amber-500/20' : 'bg-zinc-700/30'
             }`}>
-              <div className={`w-24 h-24 rounded-full flex items-center justify-center shadow-2xl ${
-                isListening ? 'bg-red-500' : 
-                isSpeaking ? 'bg-blue-500' : 
-                isLoading ? 'bg-amber-500' : 'bg-zinc-600'
-              }`}>
+              <button
+                onClick={isListening ? stopListening : handleVoiceStart}
+                className={`w-24 h-24 rounded-full flex items-center justify-center shadow-2xl transition-all duration-200 ${
+                  isListening ? 'bg-red-500 scale-110' : 
+                  isSpeaking ? 'bg-blue-500' : 
+                  isLoading ? 'bg-amber-500' : 'bg-zinc-600 hover:bg-zinc-500'
+                }`}
+              >
                 {isListening ? <Mic size={48} className="text-white" /> :
                  isSpeaking ? <Volume2 size={48} className="text-white" /> :
                  <MessageSquare size={48} className="text-zinc-300" />}
-              </div>
+              </button>
             </div>
 
             {/* Controls */}
             <div className="flex items-center space-x-4">
-              <VoicePushToTalk
-                isListening={isListening}
-                isSpeaking={isSpeaking}
-                onStart={handleVoiceStart}
-                onStop={stopListening}
-                disabled={isLoading}
-              />
-              
               {isSpeaking && (
                 <button
                   onClick={stopSpeaking}

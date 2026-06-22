@@ -11,6 +11,7 @@ type AssistantState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
 
 export default function AssistantPage() {
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
   const [state, setState] = useState<AssistantState>('idle');
   const [isExpanded, setIsExpanded] = useState(true);
   const [isVoiceActive, setIsVoiceActive] = useState(false);
@@ -20,13 +21,13 @@ export default function AssistantPage() {
   const containerRef = useRef<HTMLDivElement>(null);
   
   const supabase = createClient();
-  const { isListening, isSpeaking, startListening, stopListening, speak, stopSpeaking } = useVoice();
 
   // Initialize conversation
   useEffect(() => {
     async function initConversation() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
+      setUserId(user.id);
       
       const { data: conversations } = await supabase
         .from('conversations')
@@ -49,18 +50,31 @@ export default function AssistantPage() {
     initConversation();
   }, [supabase]);
 
+  const { 
+    isListening, 
+    isSpeaking, 
+    startListening, 
+    stopListening, 
+    speak, 
+    stopSpeaking, 
+    emitRequestSent,
+    emitResponseReceived,
+    emitError
+  } = useVoice({ userId, conversationId });
+
   const { messages, sendMessage, status } = useChat({
     transport: conversationId ? new DefaultChatTransport({
       api: '/api/chat',
       body: { conversationId },
     }) : undefined,
     id: conversationId ?? undefined,
-    onFinish: (data) => {
+    onFinish: async (data) => {
       if (isVoiceActive) {
         const lastMessage = data.messages[data.messages.length - 1];
         const parts = lastMessage?.parts || [];
         const text = parts.filter((p: any) => p.type === 'text').map((p: any) => p.text).join(' ');
         if (text) {
+          await emitResponseReceived(text);
           setState('speaking');
           speak(text, () => {
             setState('idle');
@@ -68,13 +82,14 @@ export default function AssistantPage() {
           });
         }
       }
-    }
+    },
   });
 
-  const handleVoiceResult = (text: string) => {
+  const handleVoiceResult = async (text: string) => {
     if (!conversationId) return;
     setIsVoiceActive(true);
     setState('thinking');
+    await emitRequestSent(text);
     sendMessage({ text });
   };
 
@@ -168,7 +183,7 @@ export default function AssistantPage() {
           top: position.y,
           zIndex: 9999,
         }}
-        className={`${isExpanded ? 'w-80' : 'w-48'} bg-zinc-800/95 backdrop-blur-md rounded-2xl border border-zinc-700 shadow-2xl transition-all duration-300`}
+        className={`${isExpanded ? 'w-80' : 'w-48' bg-zinc-800/95 backdrop-blur-md rounded-2xl border border-zinc-700 shadow-2xl transition-all duration-300`}
       >
         {/* Header (Draggable) */}
         <div
